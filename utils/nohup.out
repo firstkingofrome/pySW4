@@ -1,0 +1,20 @@
+Traceback (most recent call last):
+  File "sw4Image2jpg.py", line 47, in <module>
+    buildMovie()
+  File "sw4Image2jpg.py", line 38, in buildMovie
+    sw4.plotting.image.create_image_plots(inputFile, imageDir, movieType, fps, None, True)
+  File "/usr/local/eeckert/anaconda3/envs/pySW4/lib/python2.7/site-packages/pySW4-0.3.0-py2.7.egg/pySW4/plotting/image.py", line 220, in create_image_plots
+    fig, _, _ = image.patches[0].plot(cmap=cmap)
+  File "/usr/local/eeckert/anaconda3/envs/pySW4/lib/python2.7/site-packages/pySW4-0.3.0-py2.7.egg/pySW4/postp/image.py", line 639, in plot
+    fig, ax = plt.subplots()
+  File "/usr/local/eeckert/anaconda3/envs/pySW4/lib/python2.7/site-packages/matplotlib/pyplot.py", line 1198, in subplots
+    fig = figure(**fig_kw)
+  File "/usr/local/eeckert/anaconda3/envs/pySW4/lib/python2.7/site-packages/matplotlib/pyplot.py", line 548, in figure
+    **kwargs)
+  File "/usr/local/eeckert/anaconda3/envs/pySW4/lib/python2.7/site-packages/matplotlib/backend_bases.py", line 161, in new_figure_manager
+    return cls.new_figure_manager_given_figure(num, fig)
+  File "/usr/local/eeckert/anaconda3/envs/pySW4/lib/python2.7/site-packages/matplotlib/backends/_backend_tk.py", line 1044, in new_figure_manager_given_figure
+    window = Tk.Tk(className="matplotlib")
+  File "/usr/local/eeckert/anaconda3/envs/pySW4/lib/python2.7/lib-tk/Tkinter.py", line 1819, in __init__
+    self.tk = _tkinter.create(screenName, baseName, className, interactive, wantobjects, useTk, sync, use)
+_tkinter.TclError: no display name and no $DISPLAY environment variable
