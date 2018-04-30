@@ -91,8 +91,8 @@ def image_files_to_movie(
                 file_, input_file=input_file,
                 stf=stf)
             patch = image.patches[patch_number]
-            global_min = min(global_min, patch.min)
-            global_max = max(global_max, patch.max)
+            global_min = min(global_min, patch.data.min())
+            global_max = max(global_max, patch.data.max())
         if image.is_divergent:
             abs_max = max(abs(global_min), abs(global_max))
             plot_kwargs["vmin"] = -abs_max
@@ -108,7 +108,7 @@ def image_files_to_movie(
     cmdstring = (
         'ffmpeg', '-loglevel', 'fatal', '-r', '%d' % frames_per_second,
         '-f', 'image2pipe', '-vcodec', 'png', '-i', 'pipe:',
-        '-vcodec', 'libx264', '-pass', '1', '-vb', '6M', '-pix_fmt', 'yuv420p',
+         '-pass', '1', '-vb', '6M', '-pix_fmt', 'yuv420p',
         output_filename)
 
     bytes_io = BytesIO()
@@ -197,7 +197,7 @@ def create_image_plots(
         msg = "Not a folder: '{}'".format(folder)
         raise ValueError(msg)
 
-    all_files = glob(os.path.join(folder, "*.sw4img"))
+    all_files = glob.glob(os.path.join(folder, "*.sw4img"))
     if not all_files:
         msg = "No *.sw4img files in folder '{}'".format(folder)
         return Exception(msg)
@@ -234,4 +234,4 @@ def create_image_plots(
                         overwrite=True, cmap=cmap, input_file=input_file)
                 except Exception as e:
                     msg = ("Failed to create a movie: {}").format(str(e))
-                    warn(msg)
+                    warnings.warn(msg)
