@@ -1,6 +1,6 @@
 """
 pFile to r file 
-Generates an R file (with flat topography) from the given pFile
+Generates an R file (with flat topography) from the given pFile with a constant depth delta
 Eric Eckert, Nevada Seismology Lab
 4/17/18
 """
