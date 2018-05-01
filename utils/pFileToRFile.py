@@ -9,7 +9,35 @@ import sys
 import pySW4 as sw4
 import matplotlib.pyplot as plt
 import numpy as np
+#eeckert additions
+import json
 
+
+#parameter file class (loads and controls parameter file)
+
+class parameterFile():
+    def __init__(self,pFname = "rFile.ini"):
+        self.pfContents = []
+        self.parameters = {            
+                 #I just covnert to epoch time because that was easier than converting to marks time format
+                 "BLOCK_CONTROL": {
+                           
+                    },
+                 "GEOL_CONTROL": {
+                           
+                    },
+            }
+            
+        #open the parameterFile and load its contents
+        self.loadPF(pFname)
+        #assign the shcema
+    
+    def loadPF(self,pFname):
+        with open(pFname,'r') as fileObject:
+            self.pfContents = [line.strip().encode('string-escape') for line in fileObject if("#" not in line.strip())]
+        #attempt to jsonify
+        #r is to indicate that this is a raw string (i.e ignore \ escape charecter
+        self.pfContents = json.loads(r''.join(self.pfContents))
 
 #loads a pfile  for easy conversion to R file standard
 class pFile():
