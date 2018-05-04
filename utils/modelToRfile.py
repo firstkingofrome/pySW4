@@ -1,18 +1,50 @@
 import os
 import sys
-import pySW4 as sw4
+#import pySW4 as sw4
 import matplotlib.pyplot as plt
 import numpy as np
 import json
 
+#if this is false negetive numbers count as below sea level (the oppsite of how they are in SW4 rFiles)
+seaLevel = False
+
+#decide if I want to inherit from block or not, may not actually be that useful
+#class Block(sw4.prep.rfileIO.Block):
+class Block():
+    def __init__(self,blockControl):
+        self.number = blockControl["BLOCK_NUMBER"]
+        self.hh = blockControl["HHb"]
+        self.hv =blockControl["HVb"]
+        self.z0 = blockControl["Z0"]
+        self.nc = blockControl["NCb"]
+        self.ni = blockControl["Ni"]
+        self.nj = blockControl["Nj"]
+        self.nk = blockControl["Nk"]
+        self.data = np.array([])
+
+        self.x_extent = (0, (self.ni - 1) * self.hh * 1e-3)
+        self.y_extent = (0, (self.nj - 1) * self.hh * 1e-3)
+        self.z_extent = ((self.z0 + (self.nk - 1) * self.hv) * 1e-3,
+                 self.z0 * 1e-3)
+
+        self.xyextent = self.y_extent + self.x_extent
+        self.xzextent = self.x_extent + self.z_extent
+        self.yzextent = self.y_extent + self.z_extent
+                
+    def loadBlockDataSection(self):
+        #populates the block data using ONLY the data actually provided in the model
+        pass
+        
+    def linearlyInterpolate(self):
+        #interpolates to fill all of the block data which is missing (i.e for which there is no data)
+        pass
 
 class parameterFile():
     def __init__(self,pFname = "rFile.ini"):
         self.pfContents = []            
         #open the parameterFile and load its contents
-        self.loadPF(pFname)
+        self.loadPF(pFname)        
 
-    
     def loadPF(self,pFname):
         with open(pFname,'r') as fileObject:
             self.pfContents = [line.strip().encode('string-escape') for line in fileObject if("#" not in line.strip())]
@@ -21,59 +53,53 @@ class parameterFile():
         self.pfContents = json.loads(r''.join(self.pfContents))
 
 
-class geologicModel():
-    def __init__(self,fname="granite7Q_mix.8.400m.pfile"):   
-        self.elementMap = {"lon":0,"lat":1,"depth":2,"CP":3,"CS":4,"p":5,"QP":6,"QS":7}
-        dataSectionStart = 0
-        #load the input
-        self.loadPfile(fname)
-        #condense to numpy object
-        self.data =np.array(self.pFileData)  
-        del self.pFileData #return some memory        
-        #stack it by depth
-        self.points =np.dstack((self.data))[0]
-        del self.data #return some more memory
-        #and sort, actually never mind, a pfile is supposed to be sorted all ready        
-        #and return a little memory
-        #del self.data
-        pass
-    
+class Model():
+    def __init__(self,pfName = "rFile.ini",fname="uncommitedModels/GFM_all_clean"):   
+        self.parameterFile = parameterFile(pfName)  
+              
+        #build the blocks as specified
+        self.blocks = [Block(self.parameterFile.pfContents["BLOCK_CONTROL"][i]) for i in self.parameterFile.pfContents["BLOCK_CONTROL"].keys() if (i!="HEADER")]
+        #load the information from the model descritption
+        self.loadModel(fname)
+        #find the datums
+        #self.minX = min(self.ModelFileData[:,0])        
+        #self.minY = min(self.ModelFileData[:,1])
+         
+        #populate in the most reasonable way given the model input                
+        
     #clean this up to make it faster at a later point
-    def loadPfile(self,fname):
-        lat = 0.0
-        lon = 0.0
+    def loadModel(self,fname):
         lines = []
         self.header = []
-        self.pFileData = []
+        self.ModelFileData = []
         with open( fname,'r') as fileObject:
             while True:
                 #get the header
                 line =  fileObject.readline()
                 #save the line
                 self.header.append(line)
-                if(line[0] == 'T' or '.true.' in line):
+                if("#" not in line):
                     break                    
+                    
             for line in fileObject:           
-            #now we are done with the header
-                if(len(line.split()) ==3):
-                    #then this is a coordinate pair, discard the num points value
-                    lines = [i for i in line.split(" ") if i != '']
-                    lat = np.float32(lines[0])
-                    lon = np.float32(lines[1])   
-                                     
-                else:
-                    #the multiplication by 1000 moves from m/s to km/s
-                    self.pFileData.append([])
-                    lines = [i+" " for i in line.split() if i != ""]
-                    #note that a pfile is in Km/s format instead of the M/s units used by r files
-                    self.pFileData[-1].append(lon)
-                    self.pFileData[-1].append(lat)
-                    self.pFileData[-1].append(np.float32(lines[1])*1E3) #depth
-                    self.pFileData[-1].append(np.float32(lines[2])*1E3) #Cp
-                    self.pFileData[-1].append(np.float32(lines[3])*1E3) #Cs
-                    self.pFileData[-1].append(np.float32(lines[4])*1E3) #P
-                    self.pFileData[-1].append(np.float32(lines[5]))     #Qp
-                    self.pFileData[-1].append(np.float32(lines[6]))     #Qs
+                #assign everything to the nearest point
+                #the multiplication by 1000 moves from m/s to km/s
+                lines = [i+" " for i in line.split() if i != ""]                
+                self.ModelFileData.append([(float(lines[0]),float(lines[1]),float(lines[2]),int(lines[3]))])
+                
+        #now convert it to a numpy array for easier use
+        self.ModelFileData = np.array(self.ModelFileData,dtype=np.float32)
+                
+    #fix coordinates (i.e use cartesian coordinates)
+    def fixCoordinates(self):
+        #find the minimum value for all of the UTM coordinates and assign accordingly
+        
+        pass
+        
+    def coordsToIndex(self,lat,lon,depth,delta,Ni,Nj,Nk):        
+        
+        pass
+        
 
 def main():
     #allocate pixel space
@@ -85,6 +111,7 @@ def main():
     #
     
     #save pixel space to the rFile
+    
     pass
 
 if __name__=="__main__":
