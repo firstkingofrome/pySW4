@@ -14,14 +14,25 @@ class Block():
     def __init__(self,blockControl):
         self.number = blockControl["BLOCK_NUMBER"]
         self.hh = blockControl["HHb"]
-        self.hv =blockControl["HVb"]
+        self.hv = blockControl["HVb"]
         self.z0 = blockControl["Z0"]
         self.nc = blockControl["NCb"]
         self.ni = blockControl["Ni"]
         self.nj = blockControl["Nj"]
         self.nk = blockControl["Nk"]
-        self.data = np.array([])
-
+        
+        if(self.nc != 1):
+            self.vp = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
+            self.vs = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
+            self.p = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
+        if(self.nc > 3):
+            self.vp = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
+            self.vs = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
+            self.p = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
+        elif(self.nc ==1):
+            #topo block
+            self.topo = np.full((self.ni,self.nj),-999,dtype=np.float32)
+            
         self.x_extent = (0, (self.ni - 1) * self.hh * 1e-3)
         self.y_extent = (0, (self.nj - 1) * self.hh * 1e-3)
         self.z_extent = ((self.z0 + (self.nk - 1) * self.hv) * 1e-3,
@@ -54,7 +65,7 @@ class parameterFile():
 
 
 class Model():
-    def __init__(self,pfName = "rFile.ini",fname="uncommitedModels/GFM_all_clean"):   
+    def __init__(self,pfName = "rFile.ini",fname="untrackedModels/GFM_all_clean"):   
         self.parameterFile = parameterFile(pfName)  
               
         #build the blocks as specified
@@ -96,8 +107,46 @@ class Model():
         
         pass
         
-    def coordsToIndex(self,lat,lon,depth,delta,Ni,Nj,Nk):        
+    """
+    coordsToIndex
+    
+    Parameters
+    ----------
+    east: float
+        UTM easting coordinate for the bottom left most coordinate in rFile
+
+    north : float
+        UTM northing coordinate for the bottom left most coordinate in rFile     
+
+    depth : float
+        current depth in model (note that this follows the rFile depth convention, negetiv == above sea level depth
         
+
+    depthDelta : float
+        Depth delta (i.e 10 means that every pixel is sepperated by 10M depth)
+
+    horrizontalDelta: float
+        horrizontal delta (i.e 10 means that every pixel in xy space is 10M square)
+
+    Ni : int
+        #i coordinates for this block
+        
+    Ni : bool
+        #j coordinates for this block
+        
+    Nk: 
+        #k coordinates for this block
+        
+    """
+        
+    def coordsToIndex(self,depthDatum,depthDelta,horrizontalDelta,Ni,Nj,Nk,easting,northing,depthVal):        
+        #datums which are always the same since each block will always have the same datum  
+        eastingDatum = self.parameterFile.pfContents["BLOCK_CONTROL"]["HEADER"]["LAT0"]
+        northingDatum = self.parameterFile.pfContents["BLOCK_CONTROL"]["HEADER"]["LON0"]
+        #return the index (this should map everything to the nearest pixel? test IT EMPIRICALLY!!
+        return ((easting-eastingDatum)/(Ni*horrizontalDelta)) + ((northing-northingDatum)/(Nj*horrizontalDelta))
+        + ((depthVal-depthDatum)/(Nk*depthDelta))
+    
         pass
         
 
@@ -106,11 +155,15 @@ def main():
     
     #load the geologic model and map each point to pixel space (at the same time)
     
-    #interpolate
+    #for each block
     
-    #
-    
-    #save pixel space to the rFile
+        #interpolate
+        
+        #save pixel space to the rFile
+        
+        #reallocate memory 
+        
+    #done
     
     pass
 
