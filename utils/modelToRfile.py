@@ -21,14 +21,15 @@ class Block():
         self.nj = blockControl["Nj"]
         self.nk = blockControl["Nk"]
         
+        #-999 is the null data type which is ignored durring interpolation etc.
         if(self.nc != 1):
             self.vp = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
             self.vs = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
             self.p = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
         if(self.nc > 3):
-            self.vp = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
-            self.vs = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
-            self.p = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
+            self.qp = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
+            self.qs = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
+            #self.p = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
         elif(self.nc ==1):
             #topo block
             self.topo = np.full((self.ni,self.nj),-999,dtype=np.float32)
@@ -41,13 +42,13 @@ class Block():
         self.xyextent = self.y_extent + self.x_extent
         self.xzextent = self.x_extent + self.z_extent
         self.yzextent = self.y_extent + self.z_extent
-                
-    def loadBlockDataSection(self):
-        #populates the block data using ONLY the data actually provided in the model
-        pass
         
     def linearlyInterpolate(self):
         #interpolates to fill all of the block data which is missing (i.e for which there is no data)
+        pass
+        
+    def project(self):
+        #for use on topography data block 1 only (basically cuts off everything below the surface)
         pass
 
 class parameterFile():
@@ -66,18 +67,15 @@ class parameterFile():
 
 class Model():
     def __init__(self,pfName = "rFile.ini",fname="untrackedModels/GFM_all_clean"):   
-        self.parameterFile = parameterFile(pfName)  
-              
+        self.parameterFile = parameterFile(pfName)                
         #build the blocks as specified
         self.blocks = [Block(self.parameterFile.pfContents["BLOCK_CONTROL"][i]) for i in self.parameterFile.pfContents["BLOCK_CONTROL"].keys() if (i!="HEADER")]
         #load the information from the model descritption
         self.loadModel(fname)
         #find the datums
-        #self.minX = min(self.ModelFileData[:,0])        
-        #self.minY = min(self.ModelFileData[:,1])
-         
-        #populate in the most reasonable way given the model input                
-        
+        self.minX = min(self.ModelFileData[:,0])        
+        self.minY = min(self.ModelFileData[:,1])
+               
     #clean this up to make it faster at a later point
     def loadModel(self,fname):
         lines = []
@@ -96,11 +94,17 @@ class Model():
                 #assign everything to the nearest point
                 #the multiplication by 1000 moves from m/s to km/s
                 lines = [i+" " for i in line.split() if i != ""]                
-                self.ModelFileData.append([(float(lines[0]),float(lines[1]),float(lines[2]),int(lines[3]))])
+                self.ModelFileData.append((float(lines[0]),float(lines[1]),float(lines[2]),int(lines[3])))
                 
         #now convert it to a numpy array for easier use
         self.ModelFileData = np.array(self.ModelFileData,dtype=np.float32)
-                
+        #correct the up down orientation
+        self.ModelFileData = np.flipud(self.ModelFileData)
+        #flip the negetives so that it is in the same standard as the Rfile
+        ### VERY IMPORTANT!!! ###
+        self.ModelFileData[:,2] = self.ModelFileData[:,2] * -1
+        
+        
     #fix coordinates (i.e use cartesian coordinates)
     def fixCoordinates(self):
         #find the minimum value for all of the UTM coordinates and assign accordingly
@@ -144,12 +148,94 @@ class Model():
         eastingDatum = self.parameterFile.pfContents["BLOCK_CONTROL"]["HEADER"]["LAT0"]
         northingDatum = self.parameterFile.pfContents["BLOCK_CONTROL"]["HEADER"]["LON0"]
         #return the index (this should map everything to the nearest pixel? test IT EMPIRICALLY!!
-        return ((easting-eastingDatum)/(Ni*horrizontalDelta)) + ((northing-northingDatum)/(Nj*horrizontalDelta))
-        + ((depthVal-depthDatum)/(Nk*depthDelta))
+        return int(((easting-eastingDatum)/(Ni*horrizontalDelta)) + ((northing-northingDatum)/(Nj*horrizontalDelta))
+        + ((depthVal-depthDatum)/(Nk*depthDelta)))
     
+        
+    def buildRfile(self,fileObject): 
+        blockExtent = []     
+        blockIndex = 1  
+        rasterDex = 0
+        easting = 0
+        northing = 0
+        #I am just going to do these all in one go to start with and I will deal with memory issues later        
+        #construct topography block, assign to 0 for now, then once I have the data assign to the data
+        #TODO assign this to topography correctly
+        self.blocks[0].topo[:] = 0
+        
+        #save the rFile header
+        
+        #save the block headers
+        
+        #save datums from header and remove all other uneeded crap
+        easting = self.parameterFile.pfContents["BLOCK_CONTROL"]["HEADER"]['LAT0'] 
+        northing = self.parameterFile.pfContents["BLOCK_CONTROL"]["HEADER"]['LON0']
+        
+        del self.parameterFile.pfContents["BLOCK_CONTROL"]["HEADER"]
+        del self.parameterFile.pfContents["BLOCK_CONTROL"]["TOPO"]    
+        
+        #save the block data
+        for block in self.parameterFile.pfContents["BLOCK_CONTROL"]:
+            #subset the input data by the current block
+            blockExtent = np.where(np.logical_and(np.less_equal(a.ModelFileData[:,2],self.parameterFile.pfContents["BLOCK_CONTROL"][block]["Z0"]),np.greater_equal(a.ModelFileData[:,2],self.parameterFile.pfContents["BLOCK_CONTROL"][block]["Z0"] 
+            - (self.parameterFile.pfContents["BLOCK_CONTROL"][block]["Nk"]*self.parameterFile.pfContents["BLOCK_CONTROL"][block]["HVb"]))))[0]
+            
+            for i in blockExtent:
+                #compute the correct index for each point in the raster!                
+                #depthDatum,depthDelta,horrizontalDelta,Ni,Nj,Nk,easting,northing,depthVal)
+                rasterDex = self.coordsToIndex(self.parameterFile.pfContents["BLOCK_CONTROL"][block]["Z0"],self.parameterFile.pfContents["BLOCK_CONTROL"][block]["Hvb"]
+                ,self.parameterFile.pfContents["BLOCK_CONTROL"][block]["Hhb"],self.parameterFile.pfContents["BLOCK_CONTROL"][block]["Ni"],self.parameterFile.pfContents["BLOCK_CONTROL"][block]["Nj"],
+                self.parameterFile.pfContents["BLOCK_CONTROL"][block]["Nk"],easting,northing,self.ModelFileData[i][2])
+                
+                #assign each point to the model raster(s) as specified
+                if(self.nc != 1):
+                    self.blocks[blockIndex].vp[rasterDex] = 0
+                    self.blocks[blockIndex].vs[rasterDex] = 0
+                    self.blocks[blockIndex].p[rasterDex] = 0
+                
+                if(self.nc > 3):
+                    self.blocks[blockIndex].qp[rasterDex] = 0
+                    self.blocks[blockIndex].qs[rasterDex] = 0
+            
+            #linearly interpolate this block
+            
+            
+            #save this block
+            
+            
+            #(optional) return the memory used by this block
+            
+            #next block 
+            blockIndex += 1
+            pass
+            
+        """
+        #build the blocks for everything else        
+        for block in range(1,len(self.blocks)):
+            #build each block and populate with model data
+            for j in range()
+            pass
+        """
+        
+        #halt
+        #free memory held by base model 
+        #now linearly interpolate to fill all of the blocks
+        #write the rFile
         pass
         
-
+        
+#later make this more fancy (i.e draw from a weighted gauss distribution)
+class geologicModel():
+    def __init__(self,geologicProperties = "table.vel.dat"):   
+        
+        
+        pass
+    
+    def loadProperties(self):
+        pass
+        
+        
+        
 def main():
     #allocate pixel space
     
