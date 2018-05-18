@@ -29,7 +29,7 @@ class Block():
         if(self.nc > 3):
             self.qp = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
             self.qs = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
-            #self.p = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
+
         elif(self.nc ==1):
             #topo block
             self.topo = np.full((self.ni,self.nj),-999,dtype=np.float32)
@@ -51,10 +51,10 @@ class Block():
         #for use on topography data block 1 only (basically cuts off everything below the surface)
         pass
 
-class parameterFile():
+class Parameterfile():
     def __init__(self,pFname = "rFile.ini"):
         self.pfContents = []            
-        #open the parameterFile and load its contents
+        #open the Parameterfile and load its contents
         self.loadPF(pFname)        
 
     def loadPF(self,pFname):
@@ -67,9 +67,9 @@ class parameterFile():
 
 class Model():
     def __init__(self,pfName = "rFile.ini",fname="untrackedModels/GFM_all_clean"):   
-        self.parameterFile = parameterFile(pfName)                
+        self.Parameterfile = Parameterfile(pfName)                
         #build the blocks as specified
-        self.blocks = [Block(self.parameterFile.pfContents["BLOCK_CONTROL"][i]) for i in self.parameterFile.pfContents["BLOCK_CONTROL"].keys() if (i!="HEADER")]
+        self.blocks = [Block(self.Parameterfile.pfContents["BLOCK_CONTROL"][i]) for i in self.Parameterfile.pfContents["BLOCK_CONTROL"].keys() if (i!="HEADER")]
         #load the information from the model descritption
         self.loadModel(fname)
         #find the datums
@@ -144,9 +144,9 @@ class Model():
     """
         
     def coordsToIndex(self,depthDatum,depthDelta,horrizontalDelta,Ni,Nj,Nk,easting,northing,depthVal):        
-        #datums which are always the same since each block will always have the same datum  
-        eastingDatum = self.parameterFile.pfContents["BLOCK_CONTROL"]["HEADER"]["LAT0"]
-        northingDatum = self.parameterFile.pfContents["BLOCK_CONTROL"]["HEADER"]["LON0"]
+        #datums which are always the same since each block will always have the same datum  (i.e rfiles describe 
+        eastingDatum = self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["LAT0"]
+        northingDatum = self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["LON0"]
         #return the index (this should map everything to the nearest pixel? test IT EMPIRICALLY!!
         return int(((easting-eastingDatum)/(Ni*horrizontalDelta)) + ((northing-northingDatum)/(Nj*horrizontalDelta))
         + ((depthVal-depthDatum)/(Nk*depthDelta)))
@@ -168,46 +168,48 @@ class Model():
         #save the block headers
         
         #save datums from header and remove all other uneeded crap
-        easting = self.parameterFile.pfContents["BLOCK_CONTROL"]["HEADER"]['LAT0'] 
-        northing = self.parameterFile.pfContents["BLOCK_CONTROL"]["HEADER"]['LON0']
-        
-        del self.parameterFile.pfContents["BLOCK_CONTROL"]["HEADER"]
-        del self.parameterFile.pfContents["BLOCK_CONTROL"]["TOPO"]    
+        easting = self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]['LAT0'] 
+        northing = self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]['LON0']
         
         #save the block data
-        for block in self.parameterFile.pfContents["BLOCK_CONTROL"]:
-            #subset the input data by the current block
-            blockExtent = np.where(np.logical_and(np.less_equal(a.ModelFileData[:,2],self.parameterFile.pfContents["BLOCK_CONTROL"][block]["Z0"]),np.greater_equal(a.ModelFileData[:,2],self.parameterFile.pfContents["BLOCK_CONTROL"][block]["Z0"] 
-            - (self.parameterFile.pfContents["BLOCK_CONTROL"][block]["Nk"]*self.parameterFile.pfContents["BLOCK_CONTROL"][block]["HVb"]))))[0]
-            
-            for i in blockExtent:
-                #compute the correct index for each point in the raster!                
-                #depthDatum,depthDelta,horrizontalDelta,Ni,Nj,Nk,easting,northing,depthVal)
-                rasterDex = self.coordsToIndex(self.parameterFile.pfContents["BLOCK_CONTROL"][block]["Z0"],self.parameterFile.pfContents["BLOCK_CONTROL"][block]["Hvb"]
-                ,self.parameterFile.pfContents["BLOCK_CONTROL"][block]["Hhb"],self.parameterFile.pfContents["BLOCK_CONTROL"][block]["Ni"],self.parameterFile.pfContents["BLOCK_CONTROL"][block]["Nj"],
-                self.parameterFile.pfContents["BLOCK_CONTROL"][block]["Nk"],easting,northing,self.ModelFileData[i][2])
+        for block in self.Parameterfile.pfContents["BLOCK_CONTROL"]:
+            #make sure that I am dealing with an actualy BLOCK
+            if(block != "TOPO" and block != "HEADER"):
+                #subset the input data by the current block (basically get a list of the indexes that correspond to data that is within the current block
+                #takes everything within (inclusive) depth range for this block)
+                blockExtent = np.where(np.logical_and(np.less_equal(self.ModelFileData[:,2],self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Z0"]),np.greater_equal(self.ModelFileData[:,2],self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Z0"] 
+                - (self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nk"]*self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["HVb"]))))[0]
                 
-                #assign each point to the model raster(s) as specified
-                if(self.nc != 1):
-                    self.blocks[blockIndex].vp[rasterDex] = 0
-                    self.blocks[blockIndex].vs[rasterDex] = 0
-                    self.blocks[blockIndex].p[rasterDex] = 0
+                for i in blockExtent:
+                    #compute the correct index for each point in the raster!                
+                    #depthDatum,depthDelta,horrizontalDelta,Ni,Nj,Nk,easting,northing,depthVal)
+                    #TODO fix this function since it appears to be just returning zero!
+                    rasterDex = self.coordsToIndex(self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Z0"],self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["HVb"]
+                    ,self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["HHb"],self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Ni"],self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nj"],
+                    self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nk"],easting,northing,self.ModelFileData[i][2])
+                    
+                    print(rasterDex)
+                    #assign each point to the model raster(s) as specified
+                    if(self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["NCb"] != 1):
+                        self.blocks[blockIndex].vp[rasterDex] = 0
+                        self.blocks[blockIndex].vs[rasterDex] = 0
+                        self.blocks[blockIndex].p[rasterDex] = 0
+                    
+                    if(self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["NCb"]  > 3):
+                        self.blocks[blockIndex].qp[rasterDex] = 0
+                        self.blocks[blockIndex].qs[rasterDex] = 0
                 
-                if(self.nc > 3):
-                    self.blocks[blockIndex].qp[rasterDex] = 0
-                    self.blocks[blockIndex].qs[rasterDex] = 0
-            
-            #linearly interpolate this block
-            
-            
-            #save this block
-            
-            
-            #(optional) return the memory used by this block
-            
-            #next block 
-            blockIndex += 1
-            pass
+                #linearly interpolate this block
+                
+                
+                #save this block
+                
+                
+                #(optional) return the memory used by this block
+                
+                #next block 
+                blockIndex += 1
+                pass
             
         """
         #build the blocks for everything else        
@@ -222,20 +224,26 @@ class Model():
         #now linearly interpolate to fill all of the blocks
         #write the rFile
         pass
-        
-        
-#later make this more fancy (i.e draw from a weighted gauss distribution)
-class geologicModel():
-    def __init__(self,geologicProperties = "table.vel.dat"):   
-        
-        
-        pass
     
-    def loadProperties(self):
-        pass
-        
-        
-        
+    #get all of the charecteristics
+    #TODO add support to compute this from model specified in parameter file, that is WHY THIS IS A FUNCTION INSTEAD OF JUST AND ASSIGNMENT
+    #I PLAN TO BUILD ONTO THESE IN ORDER TO MAKE MORE SOPHISTICATED GOELOGIC MODELS!
+    def getVP(self,unit):
+        return self.Parameterfile.pfContents["GEOL_CONTROL"][str(unit)]["VP"]
+    
+    def getVS(self,unit):
+        return self.Parameterfile.pfContents["GEOL_CONTROL"][str(unit)]["VS"]
+
+    def getQP(self,unit):
+        return self.Parameterfile.pfContents["GEOL_CONTROL"][str(unit)]["QP"]
+    
+    def getQS(self,unit):
+        return self.Parameterfile.pfContents["GEOL_CONTROL"][str(unit)]["QS"]
+    
+    def getP(self,unit):
+        return self.Parameterfile.pfContents["GEOL_CONTROL"][str(unit)]["P"]
+
+
 def main():
     #allocate pixel space
     
