@@ -21,7 +21,8 @@ class Block():
         self.nj = blockControl["Nj"]
         self.nk = blockControl["Nk"]
         
-        #-999 is the null data type which is ignored durring interpolation etc.
+        #Do not predclare any of this use a mesh instead!
+        """
         if(self.nc != 1):
             self.vp = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
             self.vs = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
@@ -33,7 +34,8 @@ class Block():
         elif(self.nc ==1):
             #topo block
             self.topo = np.full((self.ni,self.nj),-999,dtype=np.float32)
-            
+        """
+        
         self.x_extent = (0, (self.ni - 1) * self.hh * 1e-3)
         self.y_extent = (0, (self.nj - 1) * self.hh * 1e-3)
         self.z_extent = ((self.z0 + (self.nk - 1) * self.hv) * 1e-3,
@@ -43,9 +45,7 @@ class Block():
         self.xzextent = self.x_extent + self.z_extent
         self.yzextent = self.y_extent + self.z_extent
         
-    def linearlyInterpolate(self):
-        #interpolates to fill all of the block data which is missing (i.e for which there is no data)
-        pass
+
         
     def project(self):
         #for use on topography data block 1 only (basically cuts off everything below the surface)
@@ -105,6 +105,7 @@ class Model():
         self.ModelFileData[:,2] = self.ModelFileData[:,2] * -1
         
         
+        
     #fix coordinates (i.e use cartesian coordinates)
     def fixCoordinates(self):
         #find the minimum value for all of the UTM coordinates and assign accordingly
@@ -152,11 +153,14 @@ class Model():
     def buildRfile(self,fileObject): 
         blockExtent = []     
         blockIndex = 1  
-        rasterDex = 0
+        blockX = 0
+        blockY=0
+        blockZ=0
 
         #I am just going to do these all in one go to start with and I will deal with memory issues later        
         #construct topography block, assign to 0 for now, then once I have the data assign to the data
         #TODO assign this to topography correctly
+        self.blocks[0].topo = np.full((self.blocks[0].ni,self.blocks[0].nj),0,dtype=np.float32)
         self.blocks[0].topo[:] = 0
         
         #save the rFile header
@@ -175,25 +179,37 @@ class Model():
                 #takes everything within (inclusive) depth range for this block)
                 blockExtent = np.where(np.logical_and(np.less_equal(self.ModelFileData[:,2],self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Z0"]),np.greater_equal(self.ModelFileData[:,2],self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Z0"] 
                 - (self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nk"]*self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["HVb"]))))[0]
+                                                  
+                #assign based on the number of components availible                                         
+                """
+                as shown by https://stackoverflow.com/questions/30764955/python-numpy-create-2d-array-of-values-based-on-coordinates
+                x = [0, 0, 1, 1, 2, 2]
+                y = [1, 2, 0, 1, 1, 2]
+                z = [14, 17, 15, 16, 18, 13]
+
+                z_array = np.nan * np.empty((3,3))
+                z_array[y, x] = z
+                """           
+                #assign each data point to its respective mesh (if possible)                
+                self.blocks[blockIndex].vp = np.nan*np.empty((self.blocks[blockIndex].ni,self.blocks[blockIndex].nj,self.blocks[blockIndex].nk))
+                self.blocks[blockIndex].vp[(self.ModelFileData[blockExtent][:,0]-xDatum).astype(int),(self.ModelFileData[blockExtent][:,1]-yDatum).astype(int),(self.ModelFileData[blockExtent][:,2]).astype(int)] = [self.getVP(unit) for unit in self.ModelFileData[blockExtent][:,3]]
+                """
+                if(self.blocks[block].nc != 1):
+                    self.vp = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
+                    self.blocks[block].vp = np.nan*np.empty((self.blocks[block].ni,self.blocks[block].nj,self.blocks[block].nk))
+                    
+                    self.vs = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
+                    self.p = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
                 
-                for i in blockExtent:
-                    #compute the correct index for each point in the raster!                
-                    #depthDatum,depthDelta,horrizontalDelta,Ni,Nj,Nk,easting,northing,depthVal)
-                    #TODO fix this function since it appears to be just returning zero!
-                    rasterDex = self.coordsToIndex(self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Z0"],self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["HVb"]
-                    ,self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["HHb"],self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Ni"],self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nj"],
-                    self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nk"],xDatum,yDatum,self.ModelFileData[i][2],self.ModelFileData[i][0],self.ModelFileData[i][1])
-                    
-                    #print(rasterDex)
-                    #assign each point to the model raster(s) as specified
-                    if(self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["NCb"] != 1):
-                        self.blocks[blockIndex].vp[rasterDex] = 0
-                        self.blocks[blockIndex].vs[rasterDex] = 0
-                        self.blocks[blockIndex].p[rasterDex] = 0
-                    
-                    if(self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["NCb"]  > 3):
-                        self.blocks[blockIndex].qp[rasterDex] = 0
-                        self.blocks[blockIndex].qs[rasterDex] = 0
+                if(self.blocks[block].nc > 3):
+                    self.qp = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
+                    self.qs = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
+
+
+                #assign each data dimension (i.e vp, vs p etc...)
+                self.vp = np.nan * np.empty(())
+                """
+                
                 
                 #linearly interpolate this block
                 
@@ -225,19 +241,20 @@ class Model():
     #TODO add support to compute this from model specified in parameter file, that is WHY THIS IS A FUNCTION INSTEAD OF JUST AND ASSIGNMENT
     #I PLAN TO BUILD ONTO THESE IN ORDER TO MAKE MORE SOPHISTICATED GOELOGIC MODELS!
     def getVP(self,unit):
-        return self.Parameterfile.pfContents["GEOL_CONTROL"][str(unit)]["VP"]
+        #figure out a better way to deal with this SLIT function!
+        return self.Parameterfile.pfContents["GEOL_CONTROL"][str(unit).split(".")[0]]["VP"]
     
     def getVS(self,unit):
-        return self.Parameterfile.pfContents["GEOL_CONTROL"][str(unit)]["VS"]
+        return self.Parameterfile.pfContents["GEOL_CONTROL"][str(unit).split(".")[0]]["VS"]
 
     def getQP(self,unit):
-        return self.Parameterfile.pfContents["GEOL_CONTROL"][str(unit)]["QP"]
+        return self.Parameterfile.pfContents["GEOL_CONTROL"][str(unit).split(".")[0]]["QP"]
     
     def getQS(self,unit):
-        return self.Parameterfile.pfContents["GEOL_CONTROL"][str(unit)]["QS"]
+        return self.Parameterfile.pfContents["GEOL_CONTROL"][str(unit).split(".")[0]]["QS"]
     
     def getP(self,unit):
-        return self.Parameterfile.pfContents["GEOL_CONTROL"][str(unit)]["P"]
+        return self.Parameterfile.pfContents["GEOL_CONTROL"][str(unit).split(".")[0]]["P"]
 
 
 def main():
