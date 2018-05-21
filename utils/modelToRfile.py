@@ -143,21 +143,17 @@ class Model():
         
     """
         
-    def coordsToIndex(self,depthDatum,depthDelta,horrizontalDelta,Ni,Nj,Nk,easting,northing,depthVal):        
+    def coordsToIndex(self,depthDatum,depthDelta,horrizontalDelta,Ni,Nj,Nk,xDatum,yDatum,depthVal,xVal,yVal):        
         #datums which are always the same since each block will always have the same datum  (i.e rfiles describe 
-        eastingDatum = self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["LAT0"]
-        northingDatum = self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["LON0"]
         #return the index (this should map everything to the nearest pixel? test IT EMPIRICALLY!!
-        return int(((easting-eastingDatum)/(Ni*horrizontalDelta)) + ((northing-northingDatum)/(Nj*horrizontalDelta))
-        + ((depthVal-depthDatum)/(Nk*depthDelta)))
-    
-        
+        return int(((xVal-xDatum)/(Ni*horrizontalDelta)) + ((yVal-yDatum)/(Nj*horrizontalDelta))
+        + ((depthVal-abs(depthDatum))/(Nk*depthDelta)))
+            
     def buildRfile(self,fileObject): 
         blockExtent = []     
         blockIndex = 1  
         rasterDex = 0
-        easting = 0
-        northing = 0
+
         #I am just going to do these all in one go to start with and I will deal with memory issues later        
         #construct topography block, assign to 0 for now, then once I have the data assign to the data
         #TODO assign this to topography correctly
@@ -168,8 +164,8 @@ class Model():
         #save the block headers
         
         #save datums from header and remove all other uneeded crap
-        easting = self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]['LAT0'] 
-        northing = self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]['LON0']
+        xDatum = self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]['xDatum'] 
+        yDatum = self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]['yDatum']
         
         #save the block data
         for block in self.Parameterfile.pfContents["BLOCK_CONTROL"]:
@@ -186,9 +182,9 @@ class Model():
                     #TODO fix this function since it appears to be just returning zero!
                     rasterDex = self.coordsToIndex(self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Z0"],self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["HVb"]
                     ,self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["HHb"],self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Ni"],self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nj"],
-                    self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nk"],easting,northing,self.ModelFileData[i][2])
+                    self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nk"],xDatum,yDatum,self.ModelFileData[i][2],self.ModelFileData[i][0],self.ModelFileData[i][1])
                     
-                    print(rasterDex)
+                    #print(rasterDex)
                     #assign each point to the model raster(s) as specified
                     if(self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["NCb"] != 1):
                         self.blocks[blockIndex].vp[rasterDex] = 0
