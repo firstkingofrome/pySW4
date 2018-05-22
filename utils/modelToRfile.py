@@ -153,9 +153,15 @@ class Model():
     def buildRfile(self,fileObject): 
         blockExtent = []     
         blockIndex = 1  
+        
+        minNi = 0
+        minNj = 0
+        minNk = 0
+        
         blockX = 0
         blockY=0
         blockZ=0
+        
 
         #I am just going to do these all in one go to start with and I will deal with memory issues later        
         #construct topography block, assign to 0 for now, then once I have the data assign to the data
@@ -190,9 +196,38 @@ class Model():
                 z_array = np.nan * np.empty((3,3))
                 z_array[y, x] = z
                 """           
+                #compute minimum ni,nj and nk for data (we want this to at least run at the native resolution of the model, so bascially making sure that the user isnt stupid!)
+                minNi = len(np.unique(self.ModelFileData[blockExtent][:,0]))
+                minNj = len(np.unique(self.ModelFileData[blockExtent][:,1]))
+                minNk = len(np.unique(self.ModelFileData[blockExtent][:,2]))
+                
+                
+                """
+                #actually, downsize the x,y,z indexes based on the datums and deltas in order to make all of this fit correctly
+                
+                
+                TODO figure out why this interpolation is failing!!
+                ACTUALLY DEFINE DIMENSIONS BASED ON THE WHOLE VOLUME, THEN ASSIGN VALUES IN THAT VOLUME!!! (so each pixel is a meter!)
+                THEN IF RESOLUTION IS TO HIGH BLOCK!!
+                I think that the problem is that you need to define the dimensions of the mesh correctly, and then compute deltas accordingly!
+                I am like 90% sure that will fix this!!
+                """
+                
+                
+                #assign if they exceed input values
+                if(minNi < self.blocks[blockIndex].ni):
+                   self.blocks[blockIndex].ni = minNi
+                if(minNj < self.blocks[blockIndex].nj):
+                    self.blocks[blockIndex].nj = minNj
+                if(minNk < self.blocks[blockIndex].nk):
+                    self.blocks[blockIndex].nk  = minNk
+                
+                #correct deltas to maintain model area (i.e no stretch)
+                
                 #assign each data point to its respective mesh (if possible)                
                 self.blocks[blockIndex].vp = np.nan*np.empty((self.blocks[blockIndex].ni,self.blocks[blockIndex].nj,self.blocks[blockIndex].nk))
-                self.blocks[blockIndex].vp[(self.ModelFileData[blockExtent][:,0]-xDatum).astype(int),(self.ModelFileData[blockExtent][:,1]-yDatum).astype(int),(self.ModelFileData[blockExtent][:,2]).astype(int)] = [self.getVP(unit) for unit in self.ModelFileData[blockExtent][:,3]]
+                #divide by deltas and subtract datum to fix these indexes
+                self.blocks[blockIndex].vp[((self.ModelFileData[blockExtent][:,0]-xDatum)/self.blocks[blockIndex].hh).astype(int),((self.ModelFileData[blockExtent][:,1]-yDatum)/self.blocks[blockIndex].hh).astype(int),(self.ModelFileData[blockExtent][:,2]/self.blocks[blockIndex].hv).astype(int)] = [self.getVP(unit) for unit in self.ModelFileData[blockExtent][:,3]]
                 """
                 if(self.blocks[block].nc != 1):
                     self.vp = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
