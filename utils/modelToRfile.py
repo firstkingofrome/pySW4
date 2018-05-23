@@ -93,16 +93,23 @@ class Model():
             for line in fileObject:           
                 #assign everything to the nearest point
                 #the multiplication by 1000 moves from m/s to km/s
-                lines = [i+" " for i in line.split() if i != ""]                
-                self.ModelFileData.append((float(lines[0]),float(lines[1]),float(lines[2]),int(lines[3])))
+                lines = [i+" " for i in line.split() if i != ""]  
+                #fix everything according to the datums           
+                #also internally I assign 0 to be the bottome of the rfile!b             
+                x = int(float(lines[0])-self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["xDatum"])  
+                y = int(float(lines[1])-self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["yDatum"])
+                z = int(float(lines[2]) + self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["maxDepthBelowSeaLvl"] if float(lines[2]) > 0 else abs(float(lines[2]) + self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["maxDepthBelowSeaLvl"]))
+                
+                self.ModelFileData.append((x,y,z,int(lines[3])))
+                
+                
+                #self.ModelFileData.append((int(float(lines[0])-self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["xDatum"]),int(float(lines[1])-self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["yDatum"]),float(lines[2]),int(lines[3]) if int(lines[3])))
                 
         #now convert it to a numpy array for easier use
         self.ModelFileData = np.array(self.ModelFileData,dtype=np.float32)
         #correct the up down orientation
         self.ModelFileData = np.flipud(self.ModelFileData)
-        #flip the negetives so that it is in the same standard as the Rfile
-        ### VERY IMPORTANT!!! ###
-        self.ModelFileData[:,2] = self.ModelFileData[:,2] * -1
+
         
         
         
@@ -153,81 +160,73 @@ class Model():
     def buildRfile(self,fileObject): 
         blockExtent = []     
         blockIndex = 1  
-        
-        minNi = 0
-        minNj = 0
-        minNk = 0
-        
-        blockX = 0
-        blockY=0
-        blockZ=0
-        
-
+        dataArrayDimensions = []
+        xCoord = 0
+        yCoord = 0
+        zCoord = 0
         #I am just going to do these all in one go to start with and I will deal with memory issues later        
         #construct topography block, assign to 0 for now, then once I have the data assign to the data
         #TODO assign this to topography correctly
         self.blocks[0].topo = np.full((self.blocks[0].ni,self.blocks[0].nj),0,dtype=np.float32)
-        self.blocks[0].topo[:] = 0
-        
-        #save the rFile header
-        
-        #save the block headers
-        
+        self.blocks[0].topo[:] = 0        
+
         #save datums from header and remove all other uneeded crap
-        xDatum = self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]['xDatum'] 
-        yDatum = self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]['yDatum']
-        
+   
         #save the block data
         for block in self.Parameterfile.pfContents["BLOCK_CONTROL"]:
             #make sure that I am dealing with an actualy BLOCK
-            if(block != "TOPO" and block != "HEADER"):
+            if(block != "TOPO" and block != "HEADER"):                               
                 #subset the input data by the current block (basically get a list of the indexes that correspond to data that is within the current block
                 #takes everything within (inclusive) depth range for this block)
                 blockExtent = np.where(np.logical_and(np.less_equal(self.ModelFileData[:,2],self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Z0"]),np.greater_equal(self.ModelFileData[:,2],self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Z0"] 
                 - (self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nk"]*self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["HVb"]))))[0]
-                                                  
+                
+                #compute the data array dimensions (note these may exceed i,j and k)
+                dataArrayDimensions = [self.blocks[blockIndex].ni,self.blocks[blockIndex].nj,self.blocks[blockIndex].nk]
+                self.blocks[blockIndex].vp = np.nan*np.empty(dataArrayDimensions)
+                #now assign to this based on the availibility of points in the underlying model
+                for i in range(len(self.ModelFileData[blockExtent][:,0])):    
+                    #take the coordinate, scale according to ni and hh and assign
+                    xCoord = int(self.ModelFileData[blockExtent][i][0]/(self.blocks[blockIndex].ni*self.blocks[blockIndex].hh))
+                    yCoord = int(self.ModelFileData[blockExtent][i][1]/(self.blocks[blockIndex].nj*self.blocks[blockIndex].hh))
+                    #this one is a little tricky because I have to fix the datum
+                    zCoord = -1
+                    #do other things                    
+                    #self.blocks[blockIndex].vp[][][]                                        
+                    #do this for all components!
+                    
+                    #done
+                                                                                       
                 #assign based on the number of components availible                                         
                 """
                 as shown by https://stackoverflow.com/questions/30764955/python-numpy-create-2d-array-of-values-based-on-coordinates
                 x = [0, 0, 1, 1, 2, 2]
                 y = [1, 2, 0, 1, 1, 2]
                 z = [14, 17, 15, 16, 18, 13]
-
                 z_array = np.nan * np.empty((3,3))
                 z_array[y, x] = z
                 """           
-                #compute minimum ni,nj and nk for data (we want this to at least run at the native resolution of the model, so bascially making sure that the user isnt stupid!)
-                minNi = len(np.unique(self.ModelFileData[blockExtent][:,0]))
-                minNj = len(np.unique(self.ModelFileData[blockExtent][:,1]))
-                minNk = len(np.unique(self.ModelFileData[blockExtent][:,2]))
-                
                 
                 """
                 #actually, downsize the x,y,z indexes based on the datums and deltas in order to make all of this fit correctly
-                
-                
                 TODO figure out why this interpolation is failing!!
                 ACTUALLY DEFINE DIMENSIONS BASED ON THE WHOLE VOLUME, THEN ASSIGN VALUES IN THAT VOLUME!!! (so each pixel is a meter!)
                 THEN IF RESOLUTION IS TO HIGH BLOCK!!
                 I think that the problem is that you need to define the dimensions of the mesh correctly, and then compute deltas accordingly!
                 I am like 90% sure that will fix this!!
-                """
-                
-                
-                #assign if they exceed input values
-                if(minNi < self.blocks[blockIndex].ni):
-                   self.blocks[blockIndex].ni = minNi
-                if(minNj < self.blocks[blockIndex].nj):
-                    self.blocks[blockIndex].nj = minNj
-                if(minNk < self.blocks[blockIndex].nk):
-                    self.blocks[blockIndex].nk  = minNk
-                
+                """                
                 #correct deltas to maintain model area (i.e no stretch)
                 
-                #assign each data point to its respective mesh (if possible)                
-                self.blocks[blockIndex].vp = np.nan*np.empty((self.blocks[blockIndex].ni,self.blocks[blockIndex].nj,self.blocks[blockIndex].nk))
+                #assign each data point to its respective mesh (if possible) (note assume base resolution of at least 1 meter               
+                """
+                self.blocks[blockIndex].vp = np.nan*np.empty([self.blocks[blockIndex].ni*self.blocks[blockIndex].hh/( self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"]
+                ),self.blocks[blockIndex].nj*self.blocks[blockIndex].hh/( self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"]
+                ),self.blocks[blockIndex].nk*self.blocks[blockIndex].hv/( self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"]
+                )])
+                """
                 #divide by deltas and subtract datum to fix these indexes
-                self.blocks[blockIndex].vp[((self.ModelFileData[blockExtent][:,0]-xDatum)/self.blocks[blockIndex].hh).astype(int),((self.ModelFileData[blockExtent][:,1]-yDatum)/self.blocks[blockIndex].hh).astype(int),(self.ModelFileData[blockExtent][:,2]/self.blocks[blockIndex].hv).astype(int)] = [self.getVP(unit) for unit in self.ModelFileData[blockExtent][:,3]]
+                #self.blocks[blockIndex].vp[((self.ModelFileData[blockExtent][:,0])/self.blocks[blockIndex].hh).astype(int),((self.ModelFileData[blockExtent][:,1])/self.blocks[blockIndex].hh).astype(int),(self.ModelFileData[blockExtent][:,2]/self.blocks[blockIndex].hv).astype(int)] = [self.getVP(unit) for unit in self.ModelFileData[blockExtent][:,3]]
+                                
                 """
                 if(self.blocks[block].nc != 1):
                     self.vp = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
@@ -244,28 +243,18 @@ class Model():
                 #assign each data dimension (i.e vp, vs p etc...)
                 self.vp = np.nan * np.empty(())
                 """
-                
-                
+                                
                 #linearly interpolate this block
-                
-                
+                                                
                 #save this block
-                
-                
+                                
                 #(optional) return the memory used by this block
                 
                 #next block 
                 blockIndex += 1
                 pass
             
-        """
-        #build the blocks for everything else        
-        for block in range(1,len(self.blocks)):
-            #build each block and populate with model data
-            for j in range()
-            pass
-        """
-        
+
         #halt
         #free memory held by base model 
         #now linearly interpolate to fill all of the blocks
