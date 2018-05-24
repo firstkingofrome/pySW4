@@ -189,60 +189,18 @@ class Model():
                     #take the coordinate, scale according to ni and hh and assign
                     xCoord = int(self.ModelFileData[blockExtent][i][0]/(self.blocks[blockIndex].ni*self.blocks[blockIndex].hh))
                     yCoord = int(self.ModelFileData[blockExtent][i][1]/(self.blocks[blockIndex].nj*self.blocks[blockIndex].hh))
-                    #this one is a little tricky because I have to fix the datum
-                    zCoord = -1
-                    #do other things                    
-                    #self.blocks[blockIndex].vp[][][]                                        
+                    zCoord = int(self.ModelFileData[blockExtent][i][2]/(self.blocks[blockIndex].nk*self.blocks[blockIndex].hv))                    
+                    self.blocks[blockIndex].vp[xCoord][yCoord][zCoord] = self.getVP(self.ModelFileData[blockExtent][i][3])                                        
                     #do this for all components!
                     
                     #done
-                                                                                       
+                print("finished Block!")
+                print(xCoord)
+                print(yCoord)
+                print(zCoord)
+                print(self.blocks[blockIndex].vp)
+                print(block)
                 #assign based on the number of components availible                                         
-                """
-                as shown by https://stackoverflow.com/questions/30764955/python-numpy-create-2d-array-of-values-based-on-coordinates
-                x = [0, 0, 1, 1, 2, 2]
-                y = [1, 2, 0, 1, 1, 2]
-                z = [14, 17, 15, 16, 18, 13]
-                z_array = np.nan * np.empty((3,3))
-                z_array[y, x] = z
-                """           
-                
-                """
-                #actually, downsize the x,y,z indexes based on the datums and deltas in order to make all of this fit correctly
-                TODO figure out why this interpolation is failing!!
-                ACTUALLY DEFINE DIMENSIONS BASED ON THE WHOLE VOLUME, THEN ASSIGN VALUES IN THAT VOLUME!!! (so each pixel is a meter!)
-                THEN IF RESOLUTION IS TO HIGH BLOCK!!
-                I think that the problem is that you need to define the dimensions of the mesh correctly, and then compute deltas accordingly!
-                I am like 90% sure that will fix this!!
-                """                
-                #correct deltas to maintain model area (i.e no stretch)
-                
-                #assign each data point to its respective mesh (if possible) (note assume base resolution of at least 1 meter               
-                """
-                self.blocks[blockIndex].vp = np.nan*np.empty([self.blocks[blockIndex].ni*self.blocks[blockIndex].hh/( self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"]
-                ),self.blocks[blockIndex].nj*self.blocks[blockIndex].hh/( self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"]
-                ),self.blocks[blockIndex].nk*self.blocks[blockIndex].hv/( self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"]
-                )])
-                """
-                #divide by deltas and subtract datum to fix these indexes
-                #self.blocks[blockIndex].vp[((self.ModelFileData[blockExtent][:,0])/self.blocks[blockIndex].hh).astype(int),((self.ModelFileData[blockExtent][:,1])/self.blocks[blockIndex].hh).astype(int),(self.ModelFileData[blockExtent][:,2]/self.blocks[blockIndex].hv).astype(int)] = [self.getVP(unit) for unit in self.ModelFileData[blockExtent][:,3]]
-                                
-                """
-                if(self.blocks[block].nc != 1):
-                    self.vp = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
-                    self.blocks[block].vp = np.nan*np.empty((self.blocks[block].ni,self.blocks[block].nj,self.blocks[block].nk))
-                    
-                    self.vs = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
-                    self.p = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
-                
-                if(self.blocks[block].nc > 3):
-                    self.qp = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
-                    self.qs = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
-
-
-                #assign each data dimension (i.e vp, vs p etc...)
-                self.vp = np.nan * np.empty(())
-                """
                                 
                 #linearly interpolate this block
                                                 
@@ -259,6 +217,7 @@ class Model():
         #free memory held by base model 
         #now linearly interpolate to fill all of the blocks
         #write the rFile
+        print("finished!")
         pass
     
     #get all of the charecteristics
