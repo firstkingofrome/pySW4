@@ -27,21 +27,7 @@ class Block():
         self.nj = blockControl["Nj"]
         self.nk = blockControl["Nk"]
         
-        #Do not predclare any of this use a mesh instead!
-        """
-        if(self.nc != 1):
-            self.vp = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
-            self.vs = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
-            self.p = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
-        if(self.nc > 3):
-            self.qp = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
-            self.qs = np.full((self.ni,self.nj,self.nk),-999,dtype=np.float32)
-
-        elif(self.nc ==1):
-            #topo block
-            self.topo = np.full((self.ni,self.nj),-999,dtype=np.float32)
-        """
-        
+        #TODO remove these, I do not think that I need them at all!
         self.x_extent = (0, (self.ni - 1) * self.hh * 1e-3)
         self.y_extent = (0, (self.nj - 1) * self.hh * 1e-3)
         self.z_extent = ((self.z0 + (self.nk - 1) * self.hv) * 1e-3,
@@ -145,7 +131,7 @@ class Model():
         componentMesh = []
         blockIndex = 1  
         baseDepth = 0
-        lastBlockBaseDepth = 0
+        topBlock = 0
 
         #I am just going to do these all in one go to start with and I will deal with memory issues later        
         #construct topography block, assign to 0 for now, then once I have the data assign to the data
@@ -162,51 +148,55 @@ class Model():
             if(block != "TOPO" and block != "HEADER"):    
                 print("Iteriation ",block)                           
                 #construct component mesh for points in this space
-                meshGrid = np.mgrid[0:(self.blocks[blockIndex].ni*self.blocks[blockIndex].hh)/self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"]
-                ,0:self.blocks[blockIndex].nj*self.blocks[blockIndex].hh/self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"]
-                ,0:self.blocks[blockIndex].nk * self.blocks[blockIndex].hv/self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"]]                
+                meshGrid = np.mgrid[0:self.blocks[blockIndex].ni,0:self.blocks[blockIndex].nj,0:self.blocks[blockIndex].nk]                
                 
                 #compute the depth datum--using my modified coordinates
-                lastBlockBaseDepth = baseDepth
-                baseDepth = (abs(self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Z0"]) - self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["maxDepthBelowSeaLvl"]) if (self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Z0"]) > 0 else (abs(self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Z0"])-self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["maxDepthBelowSeaLvl"] 
+                """
+                topBlock = (((abs(self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Z0"]) - self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["maxDepthBelowSeaLvl"])*self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["HVb"]/self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"])) if (self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Z0"]) > 0 else (abs(self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Z0"])-self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["maxDepthBelowSeaLvl"] 
+                *self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["HVb"]/self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"])
+                baseDepth = ((abs(self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Z0"]) - self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["maxDepthBelowSeaLvl"])/self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"])) if (self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Z0"]) > 0 else (abs(self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Z0"])-self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["maxDepthBelowSeaLvl"] 
                 /self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"])
-                #correct base depth for the underlying resolution
-                baseDepth = baseDepth/self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"]
+                """
+                topBlock = self.computeTop(self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Z0"],self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"],self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["maxDepthBelowSeaLvl"],
+                self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["HVb"],self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nk"])
+                
+                baseDepth = self.computeBottom(self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Z0"],self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"],self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["maxDepthBelowSeaLvl"])
+
                 #compute coordinate sets
-                x,y,z = np.meshgrid(np.arange(self.inputModel.shape[0]),np.arange(self.inputModel.shape[1]),np.arange(self.inputModel[:,:,lastBlockBaseDepth:baseDepth].shape[2]))                           
-                #x,y,z = self.inputModel[:,:,lastBlockBaseDepth:baseDepth].shape
+                x,y,z = np.meshgrid(np.arange(self.inputModel.shape[0]),np.arange(self.inputModel.shape[1]),np.arange(self.inputModel[:,:,baseDepth:topBlock].shape[2]))                           
+                #x,y,z = self.inputModel[:,:,topBlock:baseDepth].shape
                 #now assign to this based on the availibility of points in the underlying model                                
-                #test = scipy.interpolate.griddata((x,y,z,([self.getVP(i) for i in self.inputModel[:,:,lastBlockBaseDepth:baseDepth].flatten()]),(meshGrid[0],meshGrid[1],meshGrid[2]),method='nearest'))
+                #test = scipy.interpolate.griddata((x,y,z,([self.getVP(i) for i in self.inputModel[:,:,topBlock:baseDepth].flatten()]),(meshGrid[0],meshGrid[1],meshGrid[2]),method='nearest'))
                 X = meshGrid[0]
                 Y = meshGrid[1]
                 Z = meshGrid[2]
                 #TODO take expand on this so that these functions can read and understand youre itnerpolation scheme
                 #vp
-                print(lastBlockBaseDepth,baseDepth)
-                blockData = np.asarray([self.getVP(i) for i in np.nditer(self.inputModel[:,:,lastBlockBaseDepth:baseDepth])])
+                print(baseDepth,topBlock,)
+                blockData = np.asarray([self.getVP(i) for i in np.nditer(self.inputModel[:,:,baseDepth:topBlock])])
                 #the flattening is because what I essentially have in grid data is a basis and I want EVERY coordinate pair!
-                vp = griddata((x.flatten(),y.flatten(),z.flatten()),blockData,(meshGrid[0],meshGrid[1],meshGrid[2]),method='linear')
+                vp = griddata((x.flatten(),y.flatten(),z.flatten()),blockData,(meshGrid[0],meshGrid[1],meshGrid[2]),method='nearest')
                 #vs
-                #blockData = np.asarray([self.getVS(i) for i in np.nditer(self.inputModel[:,:,lastBlockBaseDepth:baseDepth])])
+                #blockData = np.asarray([self.getVS(i) for i in np.nditer(self.inputModel[:,:,topBlock:baseDepth])])
                 #vs = griddata((x.flatten(),y.flatten(),z.flatten()),blockData,(meshGrid[0],meshGrid[1],meshGrid[2]),method='linear')
                 
                 #p
-                #blockData = np.asarray([self.getP(i) for i in np.nditer(self.inputModel[:,:,lastBlockBaseDepth:baseDepth])])
+                #blockData = np.asarray([self.getP(i) for i in np.nditer(self.inputModel[:,:,topBlock:baseDepth])])
                 #p = griddata((x.flatten(),y.flatten(),z.flatten()),blockData,(meshGrid[0],meshGrid[1],meshGrid[2]),method='linear')
                                 
                 #qp
-                #blockData = np.asarray([self.getQP(i) for i in np.nditer(self.inputModel[:,:,lastBlockBaseDepth:baseDepth])])
+                #blockData = np.asarray([self.getQP(i) for i in np.nditer(self.inputModel[:,:,topBlock:baseDepth])])
                 #qp = griddata((x.flatten(),y.flatten(),z.flatten()),blockData,(meshGrid[0],meshGrid[1],meshGrid[2]),method='linear')
                                 
                 #qs
-                #blockData = np.asarray([self.getQS(i) for i in np.nditer(self.inputModel[:,:,lastBlockBaseDepth:baseDepth])])
+                #blockData = np.asarray([self.getQS(i) for i in np.nditer(self.inputModel[:,:,topBlock:baseDepth])])
                 #qs = griddata((x.flatten(),y.flatten(),z.flatten()),blockData,(meshGrid[0],meshGrid[1],meshGrid[2]),method='linear')
                 #now save it all to block data
                 
                 
                 #next block 
                 blockIndex += 1
-                
+
                 
         print("finished!")
         pass
@@ -230,6 +220,27 @@ class Model():
     
     def getP(self,unit):
         return self.Parameterfile.pfContents["GEOL_CONTROL"][str(unit).split(".")[0]]["P"]
+    
+    #computes the bottom of the zRange for the current block
+    @staticmethod
+    def computeBottom(z0,baseResolution,datum):
+        if(z0<0):
+            return (abs(z0)+datum)/baseResolution        
+        else:
+            return (z0-datum)/baseResolution
+            pass
+            
+    @staticmethod
+    def computeTop(z0,baseResolution,datum,HVb,Nk):
+        if(z0<0):
+            return (abs(z0)+datum+Nk*HVb)/baseResolution
+        else:
+            return (z0-datum+Nk*HVb)/baseResolution
+            pass
+
+
+
+
 
 def main():
     # find 10 nearest points
