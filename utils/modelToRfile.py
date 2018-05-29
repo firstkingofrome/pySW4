@@ -137,6 +137,11 @@ class Model():
         x=0
         y=0
         z=0
+        vp=[]
+        vs=[]
+        qp=[]
+        qs=[]
+        p=[]
         componentMesh = []
         blockIndex = 1  
         baseDepth = 0
@@ -148,10 +153,10 @@ class Model():
         self.blocks[0].topo = np.full((self.blocks[0].ni,self.blocks[0].nj),0,dtype=np.float32)
         self.blocks[0].topo[:] = 0        
         #save datums from header and remove all other uneeded crap
-      
-        #compute material properties before saving block data
         
-        #save the block data
+        #save the block header
+        
+        #now save the block data
         for block in self.Parameterfile.pfContents["BLOCK_CONTROL"]:
             #make sure that I am dealing with an actualy BLOCK
             if(block != "TOPO" and block != "HEADER"):    
@@ -168,45 +173,41 @@ class Model():
                 #correct base depth for the underlying resolution
                 baseDepth = baseDepth/self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"]
                 #compute coordinate sets
-                x,y,z = np.meshgrid(np.arange(self.inputModel.shape[0]),np.arange(self.inputModel.shape[1]),np.arange(self.inputModel[:,:,lastBlockBaseDepth:baseDepth].shape[2]))           
-                
+                x,y,z = np.meshgrid(np.arange(self.inputModel.shape[0]),np.arange(self.inputModel.shape[1]),np.arange(self.inputModel[:,:,lastBlockBaseDepth:baseDepth].shape[2]))                           
                 #x,y,z = self.inputModel[:,:,lastBlockBaseDepth:baseDepth].shape
                 #now assign to this based on the availibility of points in the underlying model                                
                 #test = scipy.interpolate.griddata((x,y,z,([self.getVP(i) for i in self.inputModel[:,:,lastBlockBaseDepth:baseDepth].flatten()]),(meshGrid[0],meshGrid[1],meshGrid[2]),method='nearest'))
                 X = meshGrid[0]
                 Y = meshGrid[1]
                 Z = meshGrid[2]
+                #TODO take expand on this so that these functions can read and understand youre itnerpolation scheme
                 #vp
-                
-                
+                print(lastBlockBaseDepth,baseDepth)
                 blockData = np.asarray([self.getVP(i) for i in np.nditer(self.inputModel[:,:,lastBlockBaseDepth:baseDepth])])
                 #the flattening is because what I essentially have in grid data is a basis and I want EVERY coordinate pair!
-                test = griddata((x.flatten(),y.flatten(),z.flatten()),blockData,(meshGrid[0],meshGrid[1],meshGrid[2]),method='nearest')
-                                
+                vp = griddata((x.flatten(),y.flatten(),z.flatten()),blockData,(meshGrid[0],meshGrid[1],meshGrid[2]),method='linear')
                 #vs
-                
+                #blockData = np.asarray([self.getVS(i) for i in np.nditer(self.inputModel[:,:,lastBlockBaseDepth:baseDepth])])
+                #vs = griddata((x.flatten(),y.flatten(),z.flatten()),blockData,(meshGrid[0],meshGrid[1],meshGrid[2]),method='linear')
                 
                 #p
-                
+                #blockData = np.asarray([self.getP(i) for i in np.nditer(self.inputModel[:,:,lastBlockBaseDepth:baseDepth])])
+                #p = griddata((x.flatten(),y.flatten(),z.flatten()),blockData,(meshGrid[0],meshGrid[1],meshGrid[2]),method='linear')
                                 
                 #qp
-                
+                #blockData = np.asarray([self.getQP(i) for i in np.nditer(self.inputModel[:,:,lastBlockBaseDepth:baseDepth])])
+                #qp = griddata((x.flatten(),y.flatten(),z.flatten()),blockData,(meshGrid[0],meshGrid[1],meshGrid[2]),method='linear')
                                 
                 #qs
+                #blockData = np.asarray([self.getQS(i) for i in np.nditer(self.inputModel[:,:,lastBlockBaseDepth:baseDepth])])
+                #qs = griddata((x.flatten(),y.flatten(),z.flatten()),blockData,(meshGrid[0],meshGrid[1],meshGrid[2]),method='linear')
+                #now save it all to block data
                 
-                for i in self.inputModel:                    
-                    #take the coordinate, scale according to ni and hh and assign
-                    
-                    pass
                 
                 #next block 
                 blockIndex += 1
-                pass
-        
-        #halt
-        #free memory held by base model 
-        #now linearly interpolate to fill all of the blocks
-        #write the rFile
+                
+                
         print("finished!")
         pass
     
