@@ -160,6 +160,7 @@ class Model():
         qp=[]
         qs=[]
         p=[]
+        topo = []
         componentMesh = []
         blockIndex = 1  
         baseDepth = 0
@@ -190,10 +191,10 @@ class Model():
         #now compute the actual data
         if(type(self.topoData)!=np.ndarray):
             #assign the block contents to the lowest elevation in the input data
-            vp = np.full((self.blocks[0].ni,self.blocks[0].nj),0,dtype=np.float32)
-            vp[:] = 0
+            topo = np.full((self.blocks[0].ni,self.blocks[0].nj),0,dtype=np.float32)
+            topo[:] = 0
             #save it
-            pySW4Rfile.write_topo_block(fileObject, vp)
+            pySW4Rfile.write_topo_block(fileObject, topo)
 
         else:
             #use the topo loaded form the file
@@ -223,7 +224,6 @@ class Model():
                 x,y,z = np.meshgrid(np.arange(self.inputModel.shape[0]),np.arange(self.inputModel.shape[1]),np.arange(self.inputModel[:,:,baseDepth:topBlock].shape[2]))                           
                 #coordinate that I want
                 X,Y,Z = np.meshgrid(np.arange(0, self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Ni"]),np.arange(0, self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nj"]),np.arange(0, self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nk"])) 
-                #x,y,z = self.inputModel[:,:,topBlock:baseDepth].shape
                 #now assign to this based on the availibility of points in the underlying model                                
                 #test = scipy.interpolate.griddata((x,y,z,([self.getVP(i) for i in self.inputModel[:,:,topBlock:baseDepth].flatten()]),(meshGrid[0],meshGrid[1],meshGrid[2]),method='nearest'))
 
@@ -232,6 +232,7 @@ class Model():
                 print(baseDepth,topBlock)
                 blockData = np.asarray([self.getVP(i) for i in np.nditer(self.inputModel[:,:,baseDepth:topBlock])])
                 #the flattening is because what I essentially have in grid data is a basis and I want EVERY coordinate pair!
+                
                 vp = griddata((x.ravel(),y.ravel(),z.ravel()),blockData,(X,Y,Z),method='nearest')
                 #vs
                 blockData = np.asarray([self.getVS(i) for i in np.nditer(self.inputModel[:,:,baseDepth:topBlock])])
@@ -255,11 +256,20 @@ class Model():
                 blockIndex += 1
                 
         #make sure that you got everything
+        #if the unit is above the topograophy set it equal to nothing!
+        
         fileObject.flush()
         pass
-
-    def interpolateUnit(x,y,z,blockData,meshGrid):
-        #interpolate on each x,y grid
+    @staticmethod
+    def interpolateUnit(self,x,y,z,X,Y,Z,blockData):
+        #interpolate on each x,y palne and save all of the results accordingly
+        return griddata(x.ravel(),X.ravel(),blockData)
+        #for a first attempt just to a straight linear interpolation and see what you get
+        
+        #for i in len(Z):
+                
+        
+                
         pass
         
 
