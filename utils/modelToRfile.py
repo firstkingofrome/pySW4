@@ -197,11 +197,11 @@ class Model():
             pySW4Rfile.write_topo_block(fileObject, topo)
 
         else:
-            #use the topo loaded form the file
+            #use the topo loaded from the file
             X,Y = np.meshgrid(np.arange(0, self.Parameterfile.pfContents["BLOCK_CONTROL"]["TOPO"]["Ni"]),np.arange(0, self.Parameterfile.pfContents["BLOCK_CONTROL"]["TOPO"]["Nj"])) 
             x,y = np.meshgrid(np.arange(self.inputModel.shape[0]),np.arange(self.inputModel.shape[1]))                           
 
-            vp = griddata((x.ravel(),y.ravel()),self.topoData.ravel(),(X,Y),method='nearest')
+            vp = griddata((x.ravel(),y.ravel()),self.topoData.ravel(),(X.ravel(),Y.ravel()),method='nearest')
 
             pySW4Rfile.write_topo_block(fileObject,vp)
             print("wrote topogaphy!")
@@ -224,6 +224,10 @@ class Model():
                 x,y,z = np.meshgrid(np.arange(self.inputModel.shape[0]),np.arange(self.inputModel.shape[1]),np.arange(self.inputModel[:,:,baseDepth:topBlock].shape[2]))                           
                 #coordinate that I want
                 X,Y,Z = np.meshgrid(np.arange(0, self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Ni"]),np.arange(0, self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nj"]),np.arange(0, self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nk"])) 
+                
+                #redo this just for each X and Y plane as a test
+                tX = 0
+                tY = 0
                 #now assign to this based on the availibility of points in the underlying model                                
                 #test = scipy.interpolate.griddata((x,y,z,([self.getVP(i) for i in self.inputModel[:,:,topBlock:baseDepth].flatten()]),(meshGrid[0],meshGrid[1],meshGrid[2]),method='nearest'))
 
@@ -232,8 +236,8 @@ class Model():
                 print(baseDepth,topBlock)
                 blockData = np.asarray([self.getVP(i) for i in np.nditer(self.inputModel[:,:,baseDepth:topBlock])])
                 #the flattening is because what I essentially have in grid data is a basis and I want EVERY coordinate pair!
-                
-                vp = griddata((x.ravel(),y.ravel(),z.ravel()),blockData,(X,Y,Z),method='nearest')
+                vp = self.interpolateUnit(x,y,z,X,Y,Z,blockData)
+                #vp = griddata((x.ravel(),y.ravel(),z.ravel()),blockData,(X.ravel(),Y.ravel(),Z.ravel()),method='nearest')
                 #vs
                 blockData = np.asarray([self.getVS(i) for i in np.nditer(self.inputModel[:,:,baseDepth:topBlock])])
                 vs = griddata((x.ravel(),y.ravel(),z.ravel()),blockData,(X,Y,Z),method='nearest')
@@ -256,23 +260,38 @@ class Model():
                 blockIndex += 1
                 
         #make sure that you got everything
-        #if the unit is above the topograophy set it equal to nothing!
-        
+        #if the unit is above the topograophy set it equal to nothing!        
         fileObject.flush()
         pass
+    
+    #TODO implement full support for the direction opperator which instructs the machine how to splice the interpolation (wish I draw picutre in a comment)
+    #the basic functionality is that each x y and z holds all of the planes in the volume, spliced in a particular direction, this controls the directionality.
     @staticmethod
-    def interpolateUnit(self,x,y,z,X,Y,Z,blockData):
+    def interpolateUnit(x,y,z,X,Y,Z,blockData,direction="z"):
+        planeData = []
+        dataMin = 0
+        dataMax = 0
         #interpolate on each x,y palne and save all of the results accordingly
-        return griddata(x.ravel(),X.ravel(),blockData)
+        #griddata((x.ravel(),y.ravel()),blockData,(X.ravel(),Y.ravel()),method='linear')
         #for a first attempt just to a straight linear interpolation and see what you get
+        if(direction=='z' and (direction != 'x' or direction != 'y')):
+            for i in range(len(Z)):
+                #compute the range of block data for each plane that I am dealing with
+                dataMin = 0
+                dataMax = 0
+                print(i)
+                #I am going to have to recompute X and Y for each plane if I decide to do this with this process
+                griddata((x[i].ravel(),y[i].ravel()),blockData[0:10089],(X[i],Y[i]),method='linear') 
+                planeData.append()
+            
+            return 
+            pass
         
-        #for i in len(Z):
-                
+        #add in the other direction opperations
         
-                
+        
         pass
         
-
     #get all of the charecteristics
     #TODO add support to compute this from model specified in parameter file, that is WHY THIS IS A FUNCTION INSTEAD OF JUST AND ASSIGNMENT
     #I PLAN TO BUILD ONTO THESE IN ORDER TO MAKE MORE SOPHISTICATED GOELOGIC MODELS!
@@ -315,6 +334,4 @@ def main():
     #self = Model("rFile.ini","untrackedModels/GFM_all_clean","")
     #actually do it this way when running for real
     #with open(outPutFile, "wab")
-    
-    
     pass
