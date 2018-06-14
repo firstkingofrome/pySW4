@@ -109,6 +109,9 @@ class Model():
         self.ModelFileData = []
         numLines = 0
         dataStart = 0
+        #underlying coordinates
+        self.x,self.y,self.z = [],[],[]
+        
         with open( fname,'r') as fileObject:
             while True:
                 #get the header
@@ -137,11 +140,14 @@ class Model():
         #correct the up down orientation
         #self.ModelFileData = np.flipud(self.ModelFileData)
         
-        #put this into 3d grid space        
-        x,y,z=np.mgrid[0:len(np.unique(self.ModelFileData[:,0])),0:len(np.unique(self.ModelFileData[:,1])) ,0:len(np.unique(self.ModelFileData[:,2]))]
+        #put this into 3d grid space    
+        """
+        I think that this is the problem , you need to decide youre own dimensions and then impose onto that!, this will distory youre model substantially!
+        """    
+        self.x,self.y,self.z=np.mgrid[0:len(np.unique(self.ModelFileData[:,0])),0:len(np.unique(self.ModelFileData[:,1])) ,0:len(np.unique(self.ModelFileData[:,2]))]
 
         #assign data to "nearest" point on the mesh
-        self.inputModel = griddata((self.ModelFileData[:,0].astype(int),self.ModelFileData[:,1].astype(int),self.ModelFileData[:,2]),(self.ModelFileData[:,3]).astype(int),(x,y,z),method='nearest')
+        self.inputModel = griddata((self.ModelFileData[:,0].astype(int),self.ModelFileData[:,1].astype(int),self.ModelFileData[:,2]),(self.ModelFileData[:,3]).astype(int),(self.x,self.y,self.z),method='nearest')
         
                              
         
@@ -215,11 +221,8 @@ class Model():
                 meshGrid = np.mgrid[0:self.blocks[blockIndex].ni,0:self.blocks[blockIndex].nj,0:self.blocks[blockIndex].nk]                
                 
                 #compute the depth datum--using my modified coordinates
-       
                 topBlock = self.computeTop(self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Z0"],self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"],self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["maxDepthBelowSeaLvl"])
-
                 baseDepth = self.computeBottom(topBlock,self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"],self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["HVb"],self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nk"])
-
                 #compute coordinate sets
                 x,y,z = np.meshgrid(np.arange(self.inputModel.shape[0]),np.arange(self.inputModel.shape[1]),np.arange(self.inputModel[:,:,baseDepth:topBlock].shape[2]))                           
                 #coordinate that I want
@@ -234,10 +237,17 @@ class Model():
                 #TODO take expand on this so that these functions can read and understand youre itnerpolation scheme
                 #vp
                 print(baseDepth,topBlock)
-                blockData = np.asarray([self.getVP(i) for i in np.nditer(self.inputModel[:,:,baseDepth:topBlock])])
+                """
+                blockData = (np.asarray([self.getVP(i) for i in np.nditer(self.inputModel[:,:,baseDepth:topBlock])])).reshape(self.inputModel.shape[0]
+                ,self.inputModel.shape[1],topBlock-baseDepth)
                 #the flattening is because what I essentially have in grid data is a basis and I want EVERY coordinate pair!
                 vp = self.interpolateUnit(x,y,z,X,Y,Z,blockData)
                 #vp = griddata((x.ravel(),y.ravel(),z.ravel()),blockData,(X.ravel(),Y.ravel(),Z.ravel()),method='nearest')
+                """                
+                
+                blockData = np.asarray([self.getVP(i) for i in np.nditer(self.inputModel[:,:,baseDepth:topBlock])])
+                vp = griddata((x.ravel(),y.ravel(),z.ravel()),blockData,(X.ravel(),Y.ravel(),Z.ravel()),method='nearest')
+
                 #vs
                 blockData = np.asarray([self.getVS(i) for i in np.nditer(self.inputModel[:,:,baseDepth:topBlock])])
                 vs = griddata((x.ravel(),y.ravel(),z.ravel()),blockData,(X,Y,Z),method='nearest')
@@ -267,21 +277,21 @@ class Model():
     #TODO implement full support for the direction opperator which instructs the machine how to splice the interpolation (wish I draw picutre in a comment)
     #the basic functionality is that each x y and z holds all of the planes in the volume, spliced in a particular direction, this controls the directionality.
     @staticmethod
-    def interpolateUnit(x,y,z,X,Y,Z,blockData,direction="z"):
+    def interpolateUnit(x,y,z,X,Y,Z,blockData,topBlock,baseDepth,direction="z"):
         planeData = []
         dataMin = 0
         dataMax = 0
-        #interpolate on each x,y palne and save all of the results accordingly
-        #griddata((x.ravel(),y.ravel()),blockData,(X.ravel(),Y.ravel()),method='linear')
-        #for a first attempt just to a straight linear interpolation and see what you get
+        
+        #to recap the problem here is that blockData is in a different direction than x or y, so you have to transpose it to correct it!
         if(direction=='z' and (direction != 'x' or direction != 'y')):
-            for i in range(len(Z)):
+            for i in range(baseDepth,topBlock):
                 #compute the range of block data for each plane that I am dealing with
                 dataMin = 0
                 dataMax = 0
                 print(i)
                 #I am going to have to recompute X and Y for each plane if I decide to do this with this process
-                griddata((x[i].ravel(),y[i].ravel()),blockData[0:10089],(X[i],Y[i]),method='linear') 
+
+                test = griddata((self.x[i].ravel(),self.y[i].ravel()),blockData[i].T.ravel(),(X[i],Y[i])) 
                 planeData.append()
             
             return 
@@ -324,6 +334,40 @@ class Model():
     @staticmethod
     def computeBottom(top,baseResolution,HVb,Nk):
         return top-((HVb*Nk)/baseResolution)
+    
+    #Tri linear interpolation from  https://stackoverflow.com/questions/6427276/3d-interpolation-of-numpy-arrays-without-scipy
+    @staticmethod
+    def triLinearInterpolate():
+        output = np.empty(indices[0].shape)
+        x_indices = indices[0]
+        y_indices = indices[1]
+        z_indices = indices[2]
+
+        x0 = x_indices.astype(np.integer)
+        y0 = y_indices.astype(np.integer)
+        z0 = z_indices.astype(np.integer)
+        x1 = x0 + 1
+        y1 = y0 + 1
+        z1 = z0 + 1
+
+        #Check if xyz1 is beyond array boundary:
+        x1[np.where(x1==input_array.shape[0])] = x0.max()
+        y1[np.where(y1==input_array.shape[1])] = y0.max()
+        z1[np.where(z1==input_array.shape[2])] = z0.max()
+
+        x = x_indices - x0
+        y = y_indices - y0
+        z = z_indices - z0
+        output = (input_array[x0,y0,z0]*(1-x)*(1-y)*(1-z) +
+                     input_array[x1,y0,z0]*x*(1-y)*(1-z) +
+                     input_array[x0,y1,z0]*(1-x)*y*(1-z) +
+                     input_array[x0,y0,z1]*(1-x)*(1-y)*z +
+                     input_array[x1,y0,z1]*x*(1-y)*z +
+                     input_array[x0,y1,z1]*(1-x)*y*z +
+                     input_array[x1,y1,z0]*x*y*(1-z) +
+                     input_array[x1,y1,z1]*x*y*z)
+
+        return output
 
 
 def main():
