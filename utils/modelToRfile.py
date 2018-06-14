@@ -131,21 +131,23 @@ class Model():
                 y = int((float(lines[1])-self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["yDatum"])/self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"])
                 z = int(abs(float(lines[2]) - self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["maxDepthBelowSeaLvl"]) if float(lines[2]) > 0 else abs(float(lines[2])) + self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["maxDepthBelowSeaLvl"])/self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"]
                 
-                self.ModelFileData.append((x,y,z,int(lines[3])))                                
-                #self.ModelFileData.append((int(float(lines[0])-self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["xDatum"]),int(float(lines[1])-self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["yDatum"]),float(lines[2]),int(lines[3]) if int(lines[3])))
+                self.ModelFileData.append((x,y,z,int(lines[3])))     
                 
+                #self.ModelFileData.append((int(float(lines[0])-self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["xDatum"]),int(float(lines[1])-self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["yDatum"]),float(lines[2]),int(lines[3]) if int(lines[3])))
+        #remove duplicate np.array([v for v in vals if len(set(v)) == len(v)])
+        #now remove any duplicate points
+        self.ModelFileData = np.array([row for row in self.ModelFileData if len(set(row)) == len(row)])
         #now convert it to a numpy array for easier use
         self.ModelFileData = np.array(self.ModelFileData,dtype=np.float32)
-
         #correct the up down orientation
         #self.ModelFileData = np.flipud(self.ModelFileData)
-        
         #put this into 3d grid space    
+        
         """
         I think that this is the problem , you need to decide youre own dimensions and then impose onto that!, this will distory youre model substantially!
-        """    
-        self.x,self.y,self.z=np.mgrid[0:len(np.unique(self.ModelFileData[:,0])),0:len(np.unique(self.ModelFileData[:,1])) ,0:len(np.unique(self.ModelFileData[:,2]))]
-
+        """            
+        self.x,self.y,self.z=np.mgrid[0:self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseNi"],0:self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseNj"] ,0:self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseNk"]]        
+        #self.x,self.y,self.z=np.mgrid[0:len(np.unique(self.ModelFileData[:,0])),0:len(np.unique(self.ModelFileData[:,1])) ,0:len(np.unique(self.ModelFileData[:,2]))]
         #assign data to "nearest" point on the mesh
         self.inputModel = griddata((self.ModelFileData[:,0].astype(int),self.ModelFileData[:,1].astype(int),self.ModelFileData[:,2]),(self.ModelFileData[:,3]).astype(int),(self.x,self.y,self.z),method='nearest')
         
