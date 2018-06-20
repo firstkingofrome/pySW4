@@ -8,6 +8,7 @@ import scipy
 import scipy.ndimage
 from scipy.interpolate import griddata
 #pySW4 dependency
+import pySW4.utils
 import pySW4Rfile
 
 
@@ -91,7 +92,7 @@ class Model():
             #drop everything that is out of extent
             self.topoData = [i for i in self.topoData if (i[0] >= 0 and i[1] >= 0)]
             #fix to np array
-            self.topoData = np.array(self.topoData)
+            self.topoData = np.asarray(self.topoData)
             #now stick it to the grid size specified by the user (generating coordinates)
             x,y=np.mgrid[0:len(np.unique(self.ModelFileData[:,0])),0:len(np.unique(self.ModelFileData[:,1]))]
             #assign, I am using linear interpolation because "Averaging" makes more sense to me than just assigning elevations to whatever happend to be closest
@@ -125,23 +126,26 @@ class Model():
                 #assign everything to the nearest point
                 #the multiplication by 1000 moves from m/s to km/s
                 lines = [i+" " for i in line.split() if i != ""]  
+                z = int(abs(float(lines[2]) - self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["maxDepthBelowSeaLvl"]) if float(lines[2]) > 0 else abs(float(lines[2])) + self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["maxDepthBelowSeaLvl"])
                 #fix everything according to the datums           
-                #also internally I assign 0 to be the bottome of the rfile!b             
-                x = int((float(lines[0])-self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["xDatum"])/self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"])
-                y = int((float(lines[1])-self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["yDatum"])/self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"])
-                z = int(abs(float(lines[2]) - self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["maxDepthBelowSeaLvl"]) if float(lines[2]) > 0 else abs(float(lines[2])) + self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["maxDepthBelowSeaLvl"])/self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"]
+                #also internally I assign 0 to be the bottome of the rfile!b                             
+                self.ModelFileData.append((float(lines[0]),float(lines[1]),z,int(lines[3])))
                 
-                self.ModelFileData.append((x,y,z,int(lines[3])))     
-                
-                #self.ModelFileData.append((int(float(lines[0])-self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["xDatum"]),int(float(lines[1])-self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["yDatum"]),float(lines[2]),int(lines[3]) if int(lines[3])))
-        #remove duplicate np.array([v for v in vals if len(set(v)) == len(v)])
-        #now remove any duplicate points
-        self.ModelFileData = np.array([row for row in self.ModelFileData if len(set(row)) == len(row)])
-        #now convert it to a numpy array for easier use
-        self.ModelFileData = np.array(self.ModelFileData,dtype=np.float32)
-        #correct the up down orientation
-        #self.ModelFileData = np.flipud(self.ModelFileData)
-        #put this into 3d grid space    
+        #convert all of the coordinates to the Carteisian coordinates used by sw4
+        self.ModelFileData = np.asarray(self.ModelFileData)
+        #note that Shhar use lon lat instead of lat lon
+        #I would change my stuff except that I am so behind on this project that I dont want to sacrafice my limited time to that end
+        self.ModelFileData[:,1],self.ModelFileData[:,0] = pySW4.utils.simple_lonlat2xy(self.ModelFileData[:,1],self.ModelFileData[:,0],self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["LON0"],
+        self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["LAT0"],self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["AZIMUTH"])
+        #now sort it so that it sits in memory in the same way that the rfile does
+        self.ModelFileData = self.ModelFileData[abs(self.ModelFileData[:,0].argsort(kind='quicksort'))]
+        self.ModelFileData = self.ModelFileData[abs(self.ModelFileData[:,1].argsort(kind='quicksort'))]
+        self.ModelFileData = self.ModelFileData[abs(self.ModelFileData[:,2].argsort(kind='quicksort'))]
+       
+        """
+        for i in range(len(self.ModelFileData)):
+            self.ModelFileData[i][2] = 
+        """
         
         """
         I think that this is the problem , you need to decide youre own dimensions and then impose onto that!, this will distory youre model substantially!
@@ -149,9 +153,7 @@ class Model():
         self.x,self.y,self.z=np.mgrid[0:self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseNi"],0:self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseNj"] ,0:self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseNk"]]        
         #self.x,self.y,self.z=np.mgrid[0:len(np.unique(self.ModelFileData[:,0])),0:len(np.unique(self.ModelFileData[:,1])) ,0:len(np.unique(self.ModelFileData[:,2]))]
         #assign data to "nearest" point on the mesh
-        self.inputModel = griddata((self.ModelFileData[:,0].astype(int),self.ModelFileData[:,1].astype(int),self.ModelFileData[:,2]),(self.ModelFileData[:,3]).astype(int),(self.x,self.y,self.z),method='nearest')
-        
-                             
+        self.inputModel = 0
         
     #fix coordinates (i.e use cartesian coordinates)
     def fixCoordinates(self):
@@ -159,20 +161,35 @@ class Model():
         pass
         
     def buildRfile(self,fileObject):   
-
-        x,X=0,0
-        y,Y=0,0
-        z,Z=0,0
-        vp=[]
-        vs=[]
-        qp=[]
-        qs=[]
-        p=[]
+        vp,Vip=[],[]
+        vs,Vis=[],[]
+        qp,Qip=[],[]
+        qs,Qis=[],[]
+        p,Pis=[],[]
         topo = []
         componentMesh = []
         blockIndex = 1  
         baseDepth = 0
         topBlock = 0
+        blockRange = 0
+        #precompute material properties for all of my points        
+        #apparently this actually takes longer than doing the easy way np = np.array([self.getP(i) for i in np.nditer(self.ModelFileData[:,3])])
+        #you should still think about this a little and see if there is some clever row op thing that you can do to speed this up (as Shhar does to compute coordinates)
+        vp = np.asarray([self.getVP(self.ModelFileData[i][3]) for i in range(len(self.ModelFileData[:,3]))])
+        #vp = griddata((x.ravel(),y.ravel(),z.ravel()),blockData,(X.ravel(),Y.ravel(),Z.ravel()),method='nearest')
+
+        #vs
+        vs = np.asarray([self.getVS(self.ModelFileData[i][3]) for i in range(len(self.ModelFileData[:,3]))])
+        #vs = griddata((x.ravel(),y.ravel(),z.ravel()),blockData,(X,Y,Z),method='nearest')
+        
+        #p
+        p = np.asarray([self.getP(self.ModelFileData[i][3]) for i in range(len(self.ModelFileData[:,3]))])
+                        
+        #qp
+        qp = np.asarray(np.asarray([self.getQP(self.ModelFileData[i][3]) for i in range(len(self.ModelFileData[:,3]))]))
+                        
+        #qs
+        qs = np.asarray(np.asarray([self.getQS(self.ModelFileData[i][3]) for i in range(len(self.ModelFileData[:,3]))]))
         
         #save the rFile header
         pySW4Rfile.write_hdr(fileObject,1,4,1,self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["AZIMUTH"],self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["LAT0"],
@@ -213,62 +230,37 @@ class Model():
 
             pySW4Rfile.write_topo_block(fileObject,vp)
             print("wrote topogaphy!")
- 
+        
         #now save the block data
         for block in self.Parameterfile.pfContents["BLOCK_CONTROL"]:
             #make sure that I am dealing with an actualy BLOCK
-            if(block != "TOPO" and block != "HEADER"):    
-                print("DEBUG: Iteriation ",block)                           
-                #construct component mesh for points in this space
-                meshGrid = np.mgrid[0:self.blocks[blockIndex].ni,0:self.blocks[blockIndex].nj,0:self.blocks[blockIndex].nk]                
-                
+            if(block != "TOPO" and block != "HEADER"):                       
                 #compute the depth datum--using my modified coordinates
-                topBlock = self.computeTop(self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Z0"],self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"],self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["maxDepthBelowSeaLvl"])
-                baseDepth = self.computeBottom(topBlock,self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"],self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["HVb"],self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nk"])
-                #compute coordinate sets
-                x,y,z = np.meshgrid(np.arange(self.inputModel.shape[0]),np.arange(self.inputModel.shape[1]),np.arange(self.inputModel[:,:,baseDepth:topBlock].shape[2]))                           
-                #coordinate that I want
-                X,Y,Z = np.meshgrid(np.arange(0, self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Ni"]),np.arange(0, self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nj"]),np.arange(0, self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nk"])) 
-                
-                #redo this just for each X and Y plane as a test
-                tX = 0
-                tY = 0
-                #now assign to this based on the availibility of points in the underlying model                                
-                #test = scipy.interpolate.griddata((x,y,z,([self.getVP(i) for i in self.inputModel[:,:,topBlock:baseDepth].flatten()]),(meshGrid[0],meshGrid[1],meshGrid[2]),method='nearest'))
+                topBlock = self.computeTop(self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Z0"],self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["maxDepthBelowSeaLvl"])
+                baseDepth = self.computeBottom(topBlock,self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["HVb"],self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nk"])
+                #use these to pull the correct part of the block dimensions, then interpolate and throw this in the rFile
+                blockRange = np.where(self.ModelFileData[topBlock - self.ModelFileData[:,2] >= baseDepth])[0]
+                coords = self.ModelFileData[blockRange][:,0:3]
+                #data = vp[blockRange]
+                HHb = self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["HHb"]
+                HVb = self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["HVb"]
+                shape = (self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Ni"],self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nj"],
+                self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nk"])
+                #compute the data
 
-                #TODO take expand on this so that these functions can read and understand youre itnerpolation scheme
-                #vp
-                print(baseDepth,topBlock)
                 """
-                blockData = (np.asarray([self.getVP(i) for i in np.nditer(self.inputModel[:,:,baseDepth:topBlock])])).reshape(self.inputModel.shape[0]
-                ,self.inputModel.shape[1],topBlock-baseDepth)
-                #the flattening is because what I essentially have in grid data is a basis and I want EVERY coordinate pair!
-                vp = self.interpolateUnit(x,y,z,X,Y,Z,blockData)
-                #vp = griddata((x.ravel(),y.ravel(),z.ravel()),blockData,(X.ravel(),Y.ravel(),Z.ravel()),method='nearest')
-                """                
+                coords,data, shape,HHb,HVb, method='linear',
+                draft=False, corners=None, origin='nw', verbose=False
+                """
+                Vip = resample3D(coords,vp[blockRange].ravel(),shape,HHb,HVb,"nearest").ravel()
                 
-                blockData = np.asarray([self.getVP(i) for i in np.nditer(self.inputModel[:,:,baseDepth:topBlock])])
-                vp = griddata((x.ravel(),y.ravel(),z.ravel()),blockData,(X.ravel(),Y.ravel(),Z.ravel()),method='nearest')
-
-                #vs
-                blockData = np.asarray([self.getVS(i) for i in np.nditer(self.inputModel[:,:,baseDepth:topBlock])])
-                vs = griddata((x.ravel(),y.ravel(),z.ravel()),blockData,(X,Y,Z),method='nearest')
+                pySW4Rfile.write_properties(fileObject,Vip,5,resample3D(coords,vs[blockRange],shape,HHb,HVb,"nearest").ravel(),
+                resample3D(coords,p[blockRange].ravel(),shape,HHb,HVb,"nearest").ravel(),resample3D(coords,qp[blockRange],shape,HHb,HVb,"nearest").ravel(),resample3D(coords,qs[blockRange],shape,HHb,HVb,"nearest").ravel()) 
                 
-                #p
-                blockData = np.asarray([self.getP(i) for i in np.nditer(self.inputModel[:,:,baseDepth:topBlock])])
-                p = griddata((x.flatten(),y.flatten(),z.flatten()),blockData,(X,Y,Z),method='nearest')
-                                
-                #qp
-                blockData = np.asarray([self.getQP(i) for i in np.nditer(self.inputModel[:,:,baseDepth:topBlock])])
-                qp = griddata((x.flatten(),y.flatten(),z.flatten()),blockData,(X,Y,Z),method='nearest')
-                                
-                #qs
-                blockData = np.asarray([self.getQS(i) for i in np.nditer(self.inputModel[:,:,baseDepth:topBlock])])
-                qs = griddata((x.flatten(),y.flatten(),z.flatten()),blockData,(X,Y,Z),method='nearest')
-                #now save it all to block data                
-                pySW4Rfile.write_properties(fileObject,vp.ravel(),5,vs.ravel(),p.ravel(),qp.ravel(),qs.ravel()) 
+                #pySW4Rfile.write_properties(fileObject,resample3D(coords,data,HHb,HVb,"nearest").ravel(),5,vs.ravel(),p.ravel(),qp.ravel(),qs.ravel()) 
                 #pySW4Rfile.write_properties(fileObject,vp.ravel(),5) 
                 #next block 
+                    
                 blockIndex += 1
                 
         #make sure that you got everything
@@ -326,50 +318,110 @@ class Model():
     #computes the bottom of the zRange for the current block
     #TODO fix these two!
     @staticmethod
-    def computeTop(z0,baseResolution,datum):
+    def computeTop(z0,datum):
         if(z0<0):
-            return (abs(z0)+datum)/baseResolution        
+            return (abs(z0)+datum)      
         else:
-            return abs(z0-datum)/baseResolution
+            return abs(z0-datum)
             pass
             
     @staticmethod
-    def computeBottom(top,baseResolution,HVb,Nk):
-        return top-((HVb*Nk)/baseResolution)
+    def computeBottom(top,HVb,Nk):
+        return top-((HVb*Nk))
     
     #Tri linear interpolation from  https://stackoverflow.com/questions/6427276/3d-interpolation-of-numpy-arrays-without-scipy
-    @staticmethod
-    def triLinearInterpolate():
-        output = np.empty(indices[0].shape)
-        x_indices = indices[0]
-        y_indices = indices[1]
-        z_indices = indices[2]
 
-        x0 = x_indices.astype(np.integer)
-        y0 = y_indices.astype(np.integer)
-        z0 = z_indices.astype(np.integer)
-        x1 = x0 + 1
-        y1 = y0 + 1
-        z1 = z0 + 1
+def resample3D(coords,data, shape,HHb,HVb, method='linear',
+             draft=False, verbose=True):
+    """
+    Resample or interpolate an array on to a (3d) grid with new extent and or
+    new shape.
+    #todo figure out how to do this with openCV or some other (faster) platform
+    """
+    
+    if coords.shape[1] != 3:
+        print('Error: data must be a tuple of 3x2d '
+              ':class:`numpy.ndarry` (X, Y, Z) or one 2d ``Z`` array')
+              
 
-        #Check if xyz1 is beyond array boundary:
-        x1[np.where(x1==input_array.shape[0])] = x0.max()
-        y1[np.where(y1==input_array.shape[1])] = y0.max()
-        z1[np.where(z1==input_array.shape[2])] = z0.max()
+    """
+    if X is None and Y is None:
+        X, Y = np.meshgrid(np.linspace(w, e, z_nx),
+                           np.linspace(s, n, z_ny))
+    """
+    if draft is False:  # the long and accurate way...
+        if verbose:
+            message = ('Accurately interpolating data onto a grid of '
+                       'shape %d%d%d and '
+                       'using X, Y, Z arrays.\n'
+                       '                      This may take a while...')
+            print(message)
+            sys.stdout.flush()
 
-        x = x_indices - x0
-        y = y_indices - y0
-        z = z_indices - z0
-        output = (input_array[x0,y0,z0]*(1-x)*(1-y)*(1-z) +
-                     input_array[x1,y0,z0]*x*(1-y)*(1-z) +
-                     input_array[x0,y1,z0]*(1-x)*y*(1-z) +
-                     input_array[x0,y0,z1]*(1-x)*(1-y)*z +
-                     input_array[x1,y0,z1]*x*(1-y)*z +
-                     input_array[x0,y1,z1]*(1-x)*y*z +
-                     input_array[x1,y1,z0]*x*y*(1-z) +
-                     input_array[x1,y1,z1]*x*y*z)
+        xi, yi,zi = np.meshgrid(np.linspace(0, shape[0]*HHb,shape[0]),
+                             np.linspace(0, shape[1]*HHb,shape[1]),np.linspace(0, shape[2]*HVb,shape[2]))
+        di = griddata((coords[:,0].ravel(), coords[:,1].ravel(), coords[:,2].ravel()),data.ravel(), (xi, yi,zi),
+                      method=method)
+        return di
 
-        return output
+    elif draft is True:  # the fast and less accurate way...
+        nx =0
+        ny=0
+        try:  # both src and dst are passed
+            src, dst = corners
+            src, dst = tuple(src), tuple(dst)
+
+        except ValueError:  # only dst corners passed
+            src = ((0, 0), (nx, 0), (nx, ny), (0, ny))
+            dst = corners
+
+        xc, yc = [p[0] for p in dst], [p[1] for p in dst]
+        xc, yc = xy2pixel_coordinates(xc, yc, extent, shape, origin)
+        dst = tuple(zip(xc, yc))
+
+        if verbose:
+            message = ('Transforming points:\n'
+                       '%s\n'
+                       'in the data to points:\n'
+                       '%s\n'
+                       'in the the output grid of shape %dx%d and '
+                       'extent %.2f,%.2f,%.2f,%.2f.')
+            print(message.format(src, dst, nx, ny, w, e, s, n))
+            sys.stdout.flush()
+
+        # Compute the transformation matrix which places
+        # the corners Z at the corners points bounding the
+        # data in output grid pixel coordinates
+        tranformation_matrix = cv2.getPerspectiveTransform(np.float32(src),
+                                                           np.float32(dst))
+
+        # Make the transformation
+        interpolation = {'nearest' : 0,
+                         'linear'  : 1,
+                         'cubic'   : 2}
+        zi = cv2.warpPerspective(Z, tranformation_matrix,
+                                 (nx, ny),
+                                 flags=interpolation[method],
+                                 borderMode=0,
+                                 borderValue=np.nan)
+
+        return zi
+
+
+"""
+try doing it this way
+width = 200
+height = 200
+img_stack_sm = np.zeros((len(img_stack), width, height))
+
+for idx in range(len(img_stack)):
+    img = img_stack[idx, :, :]
+    img_sm = cv2.resize(img, (width, height), interpolation=cv2.INTER_CUBIC)
+    img_stack_sm[idx, :, :] = img_sm
+
+
+"""
+
 
 
 def main():
@@ -378,6 +430,11 @@ def main():
     fileObject = open(outPutFileName,"wab")
     #topo test /home/eeckert/git/pySW4Forked/pySW4/utils/untrackedModels/NNSS_VOLUME/Topography.2grd.dat
     #self = Model("rFile.ini","untrackedModels/GFM_all_clean","")
+    self = Model("rFile.ini","untrackedModels/GFM_wgs84.txt","")
     #actually do it this way when running for real
     #with open(outPutFile, "wab")
-    pass
+    self.buildRfile(fileObject)
+
+main()
+
+
