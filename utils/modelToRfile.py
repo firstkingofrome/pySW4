@@ -1,12 +1,12 @@
 import os
 import sys
-#import pySW4 as sw4
 import matplotlib.pyplot as plt
 import numpy as np
 import json
 import scipy
 import scipy.ndimage
 from scipy.interpolate import griddata
+from multiprocessing import Pool
 #pySW4 dependency
 import pySW4.utils
 import pySW4Rfile
@@ -81,27 +81,30 @@ class Model():
                        
                 for line in fileObject:           
                     #assign everything to the nearest point
-                    #the multiplication by 1000 moves from m/s to km/s
                     lines = [i+" " for i in line.split() if i != ""]  
                     #fix everything according to the datums     
                     #TODO make sure that topography always has the same extent!      
-                    x = int((float(lines[0])-self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["xDatum"])/self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"])
-                    y = int((float(lines[1])-self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["yDatum"])/self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"])
+                    #x = int((float(lines[0])-self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["xDatum"])/self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"])
+                    #y = int((float(lines[1])-self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["yDatum"])/self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseResolution"])
                     #also internally I assign 0 to be the bottome of the rfile!b             
-                    self.topoData.append((x,y,float(lines[2])))
-            #drop everything that is out of extent
-            self.topoData = [i for i in self.topoData if (i[0] >= 0 and i[1] >= 0)]
+                    self.topoData.append([float(lines[0]),float(lines[1]),float(lines[2])])
+            
             #fix to np array
             self.topoData = np.asarray(self.topoData)
+            #convert to cartesian 
+            self.topoData = np.array(self.topoData)
+            self.topoData[:,1],self.topoData[:,0] = pySW4.utils.simple_lonlat2xy(self.topoData[:,1],self.topoData[:,0],self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["LON0"],
+            self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["LAT0"],self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["AZIMUTH"])
+            #drop everything that is out of extent
+            self.topoData = np.array([i for i in self.topoData if (i[0] >= 0 and i[1] >= 0)])
             #now stick it to the grid size specified by the user (generating coordinates)
-            x,y=np.mgrid[0:len(np.unique(self.ModelFileData[:,0])),0:len(np.unique(self.ModelFileData[:,1]))]
+            x,y=np.mgrid[np.linspace(0,self.Parameterfile.pfContents["BLOCK_CONTROL"]["TOPO"]["HHb"]*self.Parameterfile.pfContents["BLOCK_CONTROL"]["TOPO"]["Ni"],self.Parameterfile.pfContents["BLOCK_CONTROL"]["TOPO"]["Ni"]),
+            np.linspace(0,self.Parameterfile.pfContents["BLOCK_CONTROL"]["TOPO"]["HHb"]*self.Parameterfile.pfContents["BLOCK_CONTROL"]["TOPO"]["Nj"],self.Parameterfile.pfContents["BLOCK_CONTROL"]["TOPO"]["Nj"])]
             #assign, I am using linear interpolation because "Averaging" makes more sense to me than just assigning elevations to whatever happend to be closest
             self.topoData = griddata((self.topoData[:,0],self.topoData[:,1]),(self.topoData[:,2]),(x,y),method='linear')
             #free up memory by removing the origional data
             #TODO uncomment this for the actualy production code!
-            #del self.ModelFileData
-    
-
+            del self.ModelFileData
             
     #clean this up to make it faster at a later point
     def loadModel(self,fname):
@@ -141,19 +144,12 @@ class Model():
         self.ModelFileData = self.ModelFileData[abs(self.ModelFileData[:,0].argsort(kind='quicksort'))]
         self.ModelFileData = self.ModelFileData[abs(self.ModelFileData[:,1].argsort(kind='quicksort'))]
         self.ModelFileData = self.ModelFileData[abs(self.ModelFileData[:,2].argsort(kind='quicksort'))]
-       
-        """
-        for i in range(len(self.ModelFileData)):
-            self.ModelFileData[i][2] = 
-        """
-        
-        """
-        I think that this is the problem , you need to decide youre own dimensions and then impose onto that!, this will distory youre model substantially!
-        """            
-        self.x,self.y,self.z=np.mgrid[0:self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseNi"],0:self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseNj"] ,0:self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseNk"]]        
+        #now flip it (since 0 is the bottom in my world
+        #self.ModelFileData = self.ModelFileData[::-1]
+        #self.x,self.y,self.z=np.mgrid[0:self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseNi"],0:self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseNj"] ,0:self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["baseNk"]]        
         #self.x,self.y,self.z=np.mgrid[0:len(np.unique(self.ModelFileData[:,0])),0:len(np.unique(self.ModelFileData[:,1])) ,0:len(np.unique(self.ModelFileData[:,2]))]
-        #assign data to "nearest" point on the mesh
-        self.inputModel = 0
+
+
         
     #fix coordinates (i.e use cartesian coordinates)
     def fixCoordinates(self):
@@ -172,6 +168,7 @@ class Model():
         baseDepth = 0
         topBlock = 0
         blockRange = 0
+        indexAboveTopo = 0
         #precompute material properties for all of my points        
         #apparently this actually takes longer than doing the easy way np = np.array([self.getP(i) for i in np.nditer(self.ModelFileData[:,3])])
         #you should still think about this a little and see if there is some clever row op thing that you can do to speed this up (as Shhar does to compute coordinates)
@@ -217,18 +214,18 @@ class Model():
         if(type(self.topoData)!=np.ndarray):
             #assign the block contents to the lowest elevation in the input data
             topo = np.full((self.blocks[0].ni,self.blocks[0].nj),0,dtype=np.float32)
-            topo[:] = 0
+            topo[:] = 2000
             #save it
             pySW4Rfile.write_topo_block(fileObject, topo)
 
         else:
-            #use the topo loaded from the file
+            #use the topo lpaded from the file
             X,Y = np.meshgrid(np.arange(0, self.Parameterfile.pfContents["BLOCK_CONTROL"]["TOPO"]["Ni"]),np.arange(0, self.Parameterfile.pfContents["BLOCK_CONTROL"]["TOPO"]["Nj"])) 
             x,y = np.meshgrid(np.arange(self.inputModel.shape[0]),np.arange(self.inputModel.shape[1]))                           
 
-            vp = griddata((x.ravel(),y.ravel()),self.topoData.ravel(),(X.ravel(),Y.ravel()),method='nearest')
+            topo  = griddata((x.ravel(),y.ravel()),self.topoData.ravel(),(X.ravel(),Y.ravel()),method='linear')
 
-            pySW4Rfile.write_topo_block(fileObject,vp)
+            pySW4Rfile.write_topo_block(fileObject,topo )
             print("wrote topogaphy!")
         
         #now save the block data
@@ -239,7 +236,8 @@ class Model():
                 topBlock = self.computeTop(self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Z0"],self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["maxDepthBelowSeaLvl"])
                 baseDepth = self.computeBottom(topBlock,self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["HVb"],self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nk"])
                 #use these to pull the correct part of the block dimensions, then interpolate and throw this in the rFile
-                blockRange = np.where(self.ModelFileData[topBlock - self.ModelFileData[:,2] >= baseDepth])[0]
+                blockRange = np.where(self.ModelFileData[:,2] < topBlock)
+                blockRange = np.where(self.ModelFileData[blockRange][:,2] >= baseDepth)
                 coords = self.ModelFileData[blockRange][:,0:3]
                 #data = vp[blockRange]
                 HHb = self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["HHb"]
@@ -247,20 +245,33 @@ class Model():
                 shape = (self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Ni"],self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nj"],
                 self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nk"])
                 #compute the data
-
                 """
                 coords,data, shape,HHb,HVb, method='linear',
                 draft=False, corners=None, origin='nw', verbose=False
                 """
+                #interpolate according to the needs of this block
                 Vip = resample3D(coords,vp[blockRange].ravel(),shape,HHb,HVb,"nearest").ravel()
-                
-                pySW4Rfile.write_properties(fileObject,Vip,5,resample3D(coords,vs[blockRange],shape,HHb,HVb,"nearest").ravel(),
-                resample3D(coords,p[blockRange].ravel(),shape,HHb,HVb,"nearest").ravel(),resample3D(coords,qp[blockRange],shape,HHb,HVb,"nearest").ravel(),resample3D(coords,qs[blockRange],shape,HHb,HVb,"nearest").ravel()) 
-                
-                #pySW4Rfile.write_properties(fileObject,resample3D(coords,data,HHb,HVb,"nearest").ravel(),5,vs.ravel(),p.ravel(),qp.ravel(),qs.ravel()) 
-                #pySW4Rfile.write_properties(fileObject,vp.ravel(),5) 
-                #next block 
-                    
+                Vis = resample3D(coords,vs[blockRange],shape,HHb,HVb,"nearest").ravel()
+                Pis = resample3D(coords,p[blockRange].ravel(),shape,HHb,HVb,"nearest").ravel()
+                Qis = resample3D(coords,qs[blockRange].ravel(),shape,HHb,HVb,"nearest").ravel()
+                Qip = resample3D(coords,qp[blockRange].ravel(),shape,HHb,HVb,"nearest").ravel()
+                #determine if I need to clip for topography
+                if(self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["BLOCK_NUMBER"] == 1):
+                    topo = topo.ravel()
+                    #find out if any of these are above the topography, if they are null out the coordinates
+                    print("Clipping the parts of the model that exceed the given topography!\n")
+                    for i in range(len(topo)):
+                        if coords[i][0]  > topo[i] + self.Parameterfile.pfContents["BLOCK_CONTROL"]["HEADER"]["maxDepthBelowSeaLvl"]:
+                            #assign null values for this point, index is multiplied because I am only interested in the FIRST plane!
+                            Vip[i*self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nk"]] = -999
+                            Vis[i*self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nk"]] = -999
+                            Pis[i*self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nk"]] = -999
+                            Qis[i*self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nk"]] = -999
+                            Qip[i*self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nk"]] = -999
+                        
+                #write it!
+                pySW4Rfile.write_properties(fileObject,Vip,5,Vis,Pis,Qip,Qis)    
+                              
                 blockIndex += 1
                 
         #make sure that you got everything
@@ -284,7 +295,6 @@ class Model():
                 dataMax = 0
                 print(i)
                 #I am going to have to recompute X and Y for each plane if I decide to do this with this process
-
                 test = griddata((self.x[i].ravel(),self.y[i].ravel()),blockData[i].T.ravel(),(X[i],Y[i])) 
                 planeData.append()
             
@@ -292,8 +302,7 @@ class Model():
             pass
         
         #add in the other direction opperations
-        
-        
+                
         pass
         
     #get all of the charecteristics
@@ -316,7 +325,6 @@ class Model():
         return self.Parameterfile.pfContents["GEOL_CONTROL"][str(unit).split(".")[0]]["P"]
     
     #computes the bottom of the zRange for the current block
-    #TODO fix these two!
     @staticmethod
     def computeTop(z0,datum):
         if(z0<0):
@@ -426,15 +434,14 @@ for idx in range(len(img_stack)):
 
 def main():
     outPutFileName = "GFM_SMALL.r"
-    
     fileObject = open(outPutFileName,"wab")
     #topo test /home/eeckert/git/pySW4Forked/pySW4/utils/untrackedModels/NNSS_VOLUME/Topography.2grd.dat
-    #self = Model("rFile.ini","untrackedModels/GFM_all_clean","")
+    #self = Model("rFile.ini","untrackedModels/GFM_all_clean","/home/eeckert/git/pySW4Forked/pySW4/utils/untrackedModels/NNSS_VOLUME/topoWGS84.dat"")
     self = Model("rFile.ini","untrackedModels/GFM_wgs84.txt","")
     #actually do it this way when running for real
     #with open(outPutFile, "wab")
     self.buildRfile(fileObject)
 
-main()
+#main()
 
 
