@@ -195,7 +195,6 @@ class Model():
         #I am just going to do these all in one go to start with and I will deal with memory issues later        
         #construct topography block, assign to 0 for now, then once I have the data assign to the data
         #TODO assign this to topography correctly
-        
         #assign topography header                                                                   1=HHv ,z0 unuesd, 1 component 
         pySW4Rfile.write_block_hdr(fileObject, self.Parameterfile.pfContents["BLOCK_CONTROL"]["TOPO"]["HHb"], 1, 0, 1, self.Parameterfile.pfContents["BLOCK_CONTROL"]["TOPO"]["Ni"],
         self.Parameterfile.pfContents["BLOCK_CONTROL"]["TOPO"]["Nj"],self.Parameterfile.pfContents["BLOCK_CONTROL"]["TOPO"]["Nk"])
@@ -270,8 +269,7 @@ class Model():
                             Qip[i*self.Parameterfile.pfContents["BLOCK_CONTROL"][block]["Nk"]] = -999
                         
                 #write it!
-                pySW4Rfile.write_properties(fileObject,Vip,5,Vis,Pis,Qip,Qis)    
-                              
+                pySW4Rfile.write_properties(fileObject,Vip,5,Vis,Pis,Qip,Qis)                                  
                 blockIndex += 1
                 
         #make sure that you got everything
@@ -437,7 +435,7 @@ def main():
     fileObject = open(outPutFileName,"wab")
     #topo test /home/eeckert/git/pySW4Forked/pySW4/utils/untrackedModels/NNSS_VOLUME/Topography.2grd.dat
     #self = Model("rFile.ini","untrackedModels/GFM_all_clean","/home/eeckert/git/pySW4Forked/pySW4/utils/untrackedModels/NNSS_VOLUME/topoWGS84.dat"")
-    self = Model("rFile.ini","untrackedModels/GFM_wgs84.txt","")
+    self = Model("rFile.ini","untrackedModels/GFM_WGS84_NOAIR.txt","")
     #actually do it this way when running for real
     #with open(outPutFile, "wab")
     self.buildRfile(fileObject)
